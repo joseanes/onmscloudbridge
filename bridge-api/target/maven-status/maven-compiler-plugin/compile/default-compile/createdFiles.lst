@@ -1,0 +1,17 @@
+org/opennms/bridge/api/CloudProviderException.class
+org/opennms/bridge/api/DiscoveryStatus.class
+org/opennms/bridge/api/CloudProvider.class
+org/opennms/bridge/api/DiscoveredNode.class
+org/opennms/bridge/api/CollectionStatus$State.class
+org/opennms/bridge/api/MetricCollection.class
+org/opennms/bridge/api/MetricCollection$Metric.class
+org/opennms/bridge/api/CollectionResult$Status.class
+org/opennms/bridge/api/CollectionStatus.class
+org/opennms/bridge/api/DiscoveryStatus$State.class
+org/opennms/bridge/api/CollectionResult.class
+org/opennms/bridge/api/CollectionService.class
+org/opennms/bridge/api/DiscoveryService.class
+org/opennms/bridge/api/ValidationResult.class
+org/opennms/bridge/api/DiscoveryConfiguration.class
+org/opennms/bridge/api/CollectionConfiguration.class
+org/opennms/bridge/api/CloudResource.class

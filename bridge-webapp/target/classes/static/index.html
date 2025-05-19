@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenNMS Cloud Bridge</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #204a87;
+            color: white;
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+        h1 {
+            margin: 0;
+            padding: 0 20px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #204a87;
+            margin-top: 0;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-ok {
+            background-color: #4e9a06;
+        }
+        .status-warning {
+            background-color: #f57900;
+        }
+        .status-error {
+            background-color: #cc0000;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background-color: #f9f9f9;
+        }
+        .button {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #3465a4;
+            color: white;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #777;
+        }
+        .error {
+            color: #cc0000;
+            padding: 10px;
+            background-color: #ffeeee;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            background-color: #3465a4;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .refresh-button {
+            background-color: transparent;
+            border: none;
+            color: #3465a4;
+            cursor: pointer;
+            float: right;
+            padding: 5px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>OpenNMS Cloud Bridge</h1>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="card">
+            <h2>Dashboard</h2>
+            <button id="refresh-dashboard" class="refresh-button">↻ Refresh</button>
+            <p>Welcome to the OpenNMS Cloud Bridge. This application bridges cloud infrastructure monitoring to OpenNMS.</p>
+            
+            <div id="dashboard-summary">
+                <div class="loading">Loading dashboard data...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>OpenNMS Connection</h2>
+            <button id="refresh-opennms" class="refresh-button">↻ Refresh</button>
+            <div id="opennms-connection">
+                <div class="loading">Loading OpenNMS connection data...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Cloud Providers</h2>
+            <button id="refresh-providers" class="refresh-button">↻ Refresh</button>
+            <div id="providers-table">
+                <div class="loading">Loading providers...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Discovery Status</h2>
+            <button id="refresh-discovery" class="refresh-button">↻ Refresh</button>
+            <div id="discovery-table">
+                <div class="loading">Loading discovery status...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Collection Status</h2>
+            <button id="refresh-collection" class="refresh-button">↻ Refresh</button>
+            <div id="collection-table">
+                <div class="loading">Loading collection status...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for OpenNMS Configuration -->
+    <div id="opennms-config-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: relative; margin: 10% auto; padding: 20px; background-color: white; width: 600px; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+            <span id="close-modal" style="position: absolute; top: 10px; right: 20px; font-size: 24px; cursor: pointer; color: #777;">&times;</span>
+            <h2 style="margin-top: 0; color: #204a87;">Edit OpenNMS Connection</h2>
+            
+            <form id="opennms-config-form">
+                <div style="margin-bottom: 15px;">
+                    <label for="opennms-url" style="display: block; margin-bottom: 5px; font-weight: bold;">OpenNMS URL:</label>
+                    <input type="text" id="opennms-url" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="http://localhost:8980/opennms">
+                    <small style="color: #777;">The base URL of your OpenNMS installation</small>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="opennms-username" style="display: block; margin-bottom: 5px; font-weight: bold;">Username:</label>
+                    <input type="text" id="opennms-username" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="admin">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="opennms-password" style="display: block; margin-bottom: 5px; font-weight: bold;">Password:</label>
+                    <input type="password" id="opennms-password" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="password">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="opennms-location" style="display: block; margin-bottom: 5px; font-weight: bold;">Default Location:</label>
+                    <input type="text" id="opennms-location" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="Default">
+                    <small style="color: #777;">The default monitoring location for discovered nodes</small>
+                </div>
+
+                <div style="text-align: right; margin-top: 20px;">
+                    <button type="button" id="cancel-config" class="button" style="background-color: #777; margin-right: 10px;">Cancel</button>
+                    <button type="submit" class="button">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // API endpoints
+        const API_URL = {
+            dashboard: '/bridge/api/dashboard/summary',
+            providers: '/bridge/api/cloud-providers',
+            discovery: '/bridge/api/discovery/jobs',
+            collection: '/bridge/api/collection/jobs',
+            opennms: '/bridge/api/opennms/connection',
+            opennmsTest: '/bridge/api/opennms/test-connection',
+            opennmsStatus: '/bridge/api/opennms/status',
+            startDiscovery: (provider) => `/bridge/api/discovery/start?providerId=${provider}`,
+            startCollection: (provider) => `/bridge/api/collection/start?providerId=${provider}`
+        };
+
+        // Fetch data from API
+        async function fetchData(url) {
+            console.log(`Fetching data from: ${url}`);
+            try {
+                // Log the full absolute URL for debugging
+                const absoluteUrl = new URL(url, window.location.href);
+                console.log(`Full URL: ${absoluteUrl.href}`);
+                
+                const response = await fetch(url);
+                console.log(`Response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log(`Response data:`, data);
+                return data;
+            } catch (error) {
+                console.error(`Error fetching data from ${url}:`, error);
+                return { error: error.message };
+            }
+        }
+
+        // Format date
+        function formatDate(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleString();
+        }
+
+        // Get status class
+        function getStatusClass(status) {
+            if (status === 'CONNECTED' || status === 'COMPLETED' || status === 'OK') {
+                return 'status-ok';
+            } else if (status === 'WARNING' || status === 'IN_PROGRESS' || status === 'STARTED') {
+                return 'status-warning';
+            } else {
+                return 'status-error';
+            }
+        }
+
+        // Load dashboard summary
+        async function loadDashboardSummary() {
+            const dashboardElement = document.getElementById('dashboard-summary');
+            dashboardElement.innerHTML = '<div class="loading">Loading dashboard data...</div>';
+            
+            const data = await fetchData(API_URL.dashboard);
+            
+            if (data.error) {
+                dashboardElement.innerHTML = `<div class="error">Error loading dashboard: ${data.error}</div>`;
+                return;
+            }
+            
+            let html = `
+                <div>
+                    <span class="status-indicator status-ok"></span> Service Status: Running
+                </div>
+                <div style="margin-top: 20px;">
+                    <table>
+                        <tr>
+                            <td><strong>Cloud Providers:</strong></td>
+                            <td>${data.totalCloudProviders || 0} (${data.activeProviders || 0} active)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Discovered Resources:</strong></td>
+                            <td>${data.discoveredResources || 0}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Active Discovery Jobs:</strong></td>
+                            <td>${data.activeDiscoveryJobs || 0}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Last Discovery:</strong></td>
+                            <td>${formatDate(data.lastDiscoveryTimestamp)}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Last Collection:</strong></td>
+                            <td>${formatDate(data.lastCollectionTimestamp)}</td>
+                        </tr>
+                    </table>
+                </div>
+            `;
+            
+            dashboardElement.innerHTML = html;
+        }
+
+        // Load providers
+        async function loadProviders() {
+            const providersElement = document.getElementById('providers-table');
+            providersElement.innerHTML = '<div class="loading">Loading providers...</div>';
+            
+            const data = await fetchData(API_URL.providers);
+            
+            if (data.error) {
+                providersElement.innerHTML = `<div class="error">Error loading providers: ${data.error}</div>`;
+                return;
+            }
+            
+            if (!data || data.length === 0) {
+                providersElement.innerHTML = '<div>No cloud providers configured</div>';
+                return;
+            }
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Status</th>
+                            <th>Type</th>
+                            <th>Resources</th>
+                            <th>Regions</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.forEach(provider => {
+                const statusClass = provider.valid ? 'status-ok' : 'status-error';
+                const statusText = provider.valid ? 'Connected' : 'Error';
+                
+                html += `
+                    <tr>
+                        <td>${provider.name}</td>
+                        <td><span class="status-indicator ${statusClass}"></span> ${statusText}</td>
+                        <td>${provider.type.toUpperCase()}</td>
+                        <td id="provider-resources-${provider.id}">Loading...</td>
+                        <td>${Array.isArray(provider.regions) ? provider.regions.join(', ') : (provider.regions || '-')}</td>
+                        <td>
+                            <button class="button" onclick="startDiscovery('${provider.id}')">Discover</button>
+                            <button class="button" onclick="startCollection('${provider.id}')">Collect</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+            
+            providersElement.innerHTML = html;
+            
+            // Load resource counts from dashboard data
+            const dashboardData = await fetchData(API_URL.dashboard);
+            if (dashboardData && dashboardData.providers) {
+                dashboardData.providers.forEach(providerData => {
+                    const element = document.getElementById(`provider-resources-${providerData.id}`);
+                    if (element) {
+                        element.textContent = providerData.resourceCount || 0;
+                    }
+                });
+            }
+        }
+
+        // Load discovery jobs
+        async function loadDiscoveryJobs() {
+            const discoveryElement = document.getElementById('discovery-table');
+            discoveryElement.innerHTML = '<div class="loading">Loading discovery status...</div>';
+            
+            const data = await fetchData(API_URL.discovery);
+            
+            if (data.error) {
+                discoveryElement.innerHTML = `<div class="error">Error loading discovery status: ${data.error}</div>`;
+                return;
+            }
+            
+            if (!data || !data.jobs || data.jobs.length === 0) {
+                discoveryElement.innerHTML = '<div>No discovery jobs found</div>';
+                return;
+            }
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Last Run</th>
+                            <th>Status</th>
+                            <th>Resources Found</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.jobs.forEach(job => {
+                const statusClass = getStatusClass(job.status);
+                const endTime = job.endTime ? formatDate(job.endTime) : 'In Progress';
+                
+                html += `
+                    <tr>
+                        <td>${job.providerId}</td>
+                        <td>${endTime}</td>
+                        <td><span class="status-indicator ${statusClass}"></span> ${job.status}</td>
+                        <td>${job.resourceCount || 0}</td>
+                        <td>
+                            <button class="button" onclick="startDiscovery('${job.providerId}')">Run Again</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+            
+            discoveryElement.innerHTML = html;
+        }
+
+        // Load collection jobs
+        async function loadCollectionJobs() {
+            const collectionElement = document.getElementById('collection-table');
+            collectionElement.innerHTML = '<div class="loading">Loading collection status...</div>';
+            
+            const data = await fetchData(API_URL.collection);
+            
+            if (data.error) {
+                collectionElement.innerHTML = `<div class="error">Error loading collection status: ${data.error}</div>`;
+                return;
+            }
+            
+            if (!data || !data.jobs || data.jobs.length === 0) {
+                collectionElement.innerHTML = '<div>No collection jobs found</div>';
+                return;
+            }
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Last Run</th>
+                            <th>Status</th>
+                            <th>Metrics Collected</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.jobs.forEach(job => {
+                const statusClass = getStatusClass(job.status);
+                const endTime = job.endTime ? formatDate(job.endTime) : 'In Progress';
+                
+                html += `
+                    <tr>
+                        <td>${job.providerId}</td>
+                        <td>${endTime}</td>
+                        <td><span class="status-indicator ${statusClass}"></span> ${job.status}</td>
+                        <td>${job.metricCount || 0}</td>
+                        <td>
+                            <button class="button" onclick="startCollection('${job.providerId}')">Run Again</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+            
+            collectionElement.innerHTML = html;
+        }
+
+        // Start discovery
+        async function startDiscovery(providerId) {
+            console.log(`Starting discovery for provider: ${providerId}`);
+            console.log(`API URL: ${API_URL.startDiscovery(providerId)}`);
+            
+            if (!confirm(`Start discovery for provider '${providerId}'?`)) {
+                return;
+            }
+            
+            try {
+                console.log("Making fetch request...");
+                const response = await fetch(API_URL.startDiscovery(providerId), {
+                    method: 'POST'
+                });
+                
+                console.log(`Response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log("Response data:", data);
+                alert(`Discovery started for provider '${providerId}'. Job ID: ${data.jobId}`);
+                
+                // Reload discovery jobs
+                loadDiscoveryJobs();
+            } catch (error) {
+                console.error('Error starting discovery:', error);
+                alert(`Error starting discovery: ${error.message}`);
+            }
+        }
+
+        // Start collection
+        async function startCollection(providerId) {
+            console.log(`Starting collection for provider: ${providerId}`);
+            console.log(`API URL: ${API_URL.startCollection(providerId)}`);
+            
+            if (!confirm(`Start collection for provider '${providerId}'?`)) {
+                return;
+            }
+            
+            try {
+                console.log("Making fetch request...");
+                const response = await fetch(API_URL.startCollection(providerId), {
+                    method: 'POST'
+                });
+                
+                console.log(`Response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log("Response data:", data);
+                alert(`Collection started for provider '${providerId}'. Job ID: ${data.jobId}`);
+                
+                // Reload collection jobs
+                loadCollectionJobs();
+            } catch (error) {
+                console.error('Error starting collection:', error);
+                alert(`Error starting collection: ${error.message}`);
+            }
+        }
+
+        // Load OpenNMS connection info
+        async function loadOpenNMSConnection() {
+            const openNMSElement = document.getElementById('opennms-connection');
+            openNMSElement.innerHTML = '<div class="loading">Loading OpenNMS connection data...</div>';
+            
+            // Get both connection info and status
+            const [connectionData, statusData] = await Promise.all([
+                fetchData(API_URL.opennms),
+                fetchData(API_URL.opennmsStatus)
+            ]);
+            
+            if (connectionData.error || statusData.error) {
+                openNMSElement.innerHTML = `<div class="error">Error loading OpenNMS data: ${connectionData.error || statusData.error}</div>`;
+                return;
+            }
+            
+            // Determine connection status display
+            const isConnected = connectionData.connectionStatus && statusData.connected;
+            const statusClass = isConnected ? 'status-ok' : 'status-error';
+            const statusText = isConnected ? 'Connected' : 'Not Connected';
+            
+            let html = `
+                <div style="margin-bottom: 15px;">
+                    <table>
+                        <tr>
+                            <td width="120"><strong>Status:</strong></td>
+                            <td><span class="status-indicator ${statusClass}"></span> ${statusText}</td>
+                            <td width="120" style="text-align: right;">
+                                <button class="button" onclick="testOpenNMSConnection()">Test Connection</button>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                
+                <div style="display: flex; gap: 30px;">
+                    <div style="flex: 1;">
+                        <h3 style="margin-top: 0;">Connection Settings</h3>
+                        <table>
+                            <tr>
+                                <td><strong>URL:</strong></td>
+                                <td>${connectionData.baseUrl || 'Not configured'}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Username:</strong></td>
+                                <td>${connectionData.username || 'Not configured'}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Default Location:</strong></td>
+                                <td>${connectionData.defaultLocation || 'Default'}</td>
+                            </tr>
+                        </table>
+                        <div style="margin-top: 15px;">
+                            <button class="button" onclick="showOpenNMSConfigModal()">Edit Configuration</button>
+                        </div>
+                    </div>
+            `;
+            
+            // Add status section only if connected
+            if (isConnected) {
+                html += `
+                    <div style="flex: 1;">
+                        <h3 style="margin-top: 0;">OpenNMS Status</h3>
+                        <table>
+                            <tr>
+                                <td><strong>Nodes Up:</strong></td>
+                                <td>${statusData.nodesUp || 0}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Nodes Down:</strong></td>
+                                <td>${statusData.nodesDown || 0}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Active Alarms:</strong></td>
+                                <td>${statusData.alarms || 0}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Current Outages:</strong></td>
+                                <td>${statusData.outages || 0}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Discovered Services:</strong></td>
+                                <td>${statusData.discoveredServices || 0}</td>
+                            </tr>
+                        </table>
+                        <div style="margin-top: 15px;">
+                            <a href="${connectionData.baseUrl}" target="_blank" class="button">Open OpenNMS</a>
+                        </div>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div style="flex: 1;">
+                        <h3 style="margin-top: 0;">OpenNMS Status</h3>
+                        <p>Not connected to OpenNMS.</p>
+                        <p>Please check your connection settings and ensure that the OpenNMS server is running.</p>
+                    </div>
+                `;
+            }
+            
+            html += `</div>`;
+            
+            openNMSElement.innerHTML = html;
+        }
+        
+        // Test OpenNMS connection
+        async function testOpenNMSConnection() {
+            const openNMSElement = document.getElementById('opennms-connection');
+            const oldContent = openNMSElement.innerHTML;
+            
+            // Update UI to show testing
+            openNMSElement.innerHTML = '<div class="loading">Testing OpenNMS connection...</div>';
+            
+            try {
+                const result = await fetchData(API_URL.opennmsTest);
+                
+                if (result.success) {
+                    alert('Connection successful: ' + result.message);
+                } else {
+                    let errorMessage = result.message || 'Connection failed';
+                    
+                    // Show detailed message if available
+                    if (result.detailMessage) {
+                        errorMessage += '\n\n' + result.detailMessage;
+                    }
+                    
+                    alert(errorMessage);
+                }
+                
+                // Reload connection info after test
+                loadOpenNMSConnection();
+            } catch (error) {
+                openNMSElement.innerHTML = oldContent;
+                alert('Error testing connection: ' + error.message);
+            }
+        }
+        
+        // Show OpenNMS configuration modal
+        async function showOpenNMSConfigModal() {
+            // Get current OpenNMS connection data
+            const data = await fetchData(API_URL.opennms);
+            
+            if (data.error) {
+                alert('Error loading OpenNMS configuration: ' + data.error);
+                return;
+            }
+            
+            // Fill the form with current values
+            document.getElementById('opennms-url').value = data.baseUrl || '';
+            document.getElementById('opennms-username').value = data.username || '';
+            document.getElementById('opennms-password').value = ''; // Don't populate password for security
+            document.getElementById('opennms-location').value = data.defaultLocation || 'Default';
+            
+            // Show the modal
+            document.getElementById('opennms-config-modal').style.display = 'block';
+        }
+        
+        // Hide OpenNMS configuration modal
+        function hideOpenNMSConfigModal() {
+            document.getElementById('opennms-config-modal').style.display = 'none';
+        }
+        
+        // Submit OpenNMS configuration
+        async function submitOpenNMSConfig(event) {
+            event.preventDefault();
+            
+            // Get form values
+            const url = document.getElementById('opennms-url').value.trim();
+            const username = document.getElementById('opennms-username').value.trim();
+            const password = document.getElementById('opennms-password').value.trim();
+            const location = document.getElementById('opennms-location').value.trim();
+            
+            // Validate inputs
+            if (!url) {
+                alert('OpenNMS URL is required');
+                return;
+            }
+            
+            if (!username) {
+                alert('Username is required');
+                return;
+            }
+            
+            // Create settings object
+            const settings = {
+                baseUrl: url,
+                username: username,
+                defaultLocation: location
+            };
+            
+            // Add password only if provided
+            if (password) {
+                settings.password = password;
+            }
+            
+            try {
+                // Show loading indicator or disable form
+                const submitButton = document.querySelector('#opennms-config-form button[type="submit"]');
+                const originalText = submitButton.textContent;
+                submitButton.textContent = 'Saving...';
+                submitButton.disabled = true;
+                
+                // Submit settings to API
+                const response = await fetch(API_URL.opennms, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(settings)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                // Reset button
+                submitButton.textContent = originalText;
+                submitButton.disabled = false;
+                
+                if (result.success) {
+                    alert('Configuration updated successfully. ' + result.message);
+                    hideOpenNMSConfigModal();
+                    
+                    // Refresh OpenNMS connection info
+                    loadOpenNMSConnection();
+                } else {
+                    alert('Error updating configuration: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Error updating OpenNMS configuration:', error);
+                alert('Error updating configuration: ' + error.message);
+            }
+        }
+
+        // Load all data
+        function loadAllData() {
+            loadDashboardSummary();
+            loadOpenNMSConnection();
+            loadProviders();
+            loadDiscoveryJobs();
+            loadCollectionJobs();
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Load initial data
+            loadAllData();
+            
+            // Set up refresh buttons
+            document.getElementById('refresh-dashboard').addEventListener('click', loadDashboardSummary);
+            document.getElementById('refresh-opennms').addEventListener('click', loadOpenNMSConnection);
+            document.getElementById('refresh-providers').addEventListener('click', loadProviders);
+            document.getElementById('refresh-discovery').addEventListener('click', loadDiscoveryJobs);
+            document.getElementById('refresh-collection').addEventListener('click', loadCollectionJobs);
+            
+            // Set up OpenNMS config modal events
+            document.getElementById('close-modal').addEventListener('click', hideOpenNMSConfigModal);
+            document.getElementById('cancel-config').addEventListener('click', hideOpenNMSConfigModal);
+            document.getElementById('opennms-config-form').addEventListener('submit', submitOpenNMSConfig);
+            
+            // Close modal when clicking outside
+            const modal = document.getElementById('opennms-config-modal');
+            window.addEventListener('click', (event) => {
+                if (event.target === modal) {
+                    hideOpenNMSConfigModal();
+                }
+            });
+            
+            // Make functions available globally
+            window.startDiscovery = startDiscovery;
+            window.startCollection = startCollection;
+            window.testOpenNMSConnection = testOpenNMSConnection;
+            window.showOpenNMSConfigModal = showOpenNMSConfigModal;
+        });
+    </script>
+</body>
+</html>

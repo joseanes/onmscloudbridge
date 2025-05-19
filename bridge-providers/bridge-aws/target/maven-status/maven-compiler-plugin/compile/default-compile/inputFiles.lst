@@ -1,0 +1,4 @@
+/Users/anes/dev/onmscloudbridge/bridge-providers/bridge-aws/src/main/java/org/opennms/bridge/aws/AwsCloudProvider.java
+/Users/anes/dev/onmscloudbridge/bridge-providers/bridge-aws/src/main/java/org/opennms/bridge/aws/AwsConfigurationProperties.java
+/Users/anes/dev/onmscloudbridge/bridge-providers/bridge-aws/src/main/java/org/opennms/bridge/aws/AwsMetricCollector.java
+/Users/anes/dev/onmscloudbridge/bridge-providers/bridge-aws/src/main/java/org/opennms/bridge/aws/AwsDiscoveryStrategy.java

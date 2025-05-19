@@ -1,0 +1,141 @@
+{
+  "groups": [
+    {
+      "name": "cloud.aws",
+      "type": "org.opennms.bridge.aws.AwsConfigurationProperties",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties"
+    },
+    {
+      "name": "cloud.aws.cloud-watch-collection",
+      "type": "org.opennms.bridge.aws.AwsConfigurationProperties$CloudWatchCollection",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties",
+      "sourceMethod": "getCloudWatchCollection()"
+    },
+    {
+      "name": "cloud.aws.ec2-discovery",
+      "type": "org.opennms.bridge.aws.AwsConfigurationProperties$Ec2Discovery",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties",
+      "sourceMethod": "getEc2Discovery()"
+    }
+  ],
+  "properties": [
+    {
+      "name": "cloud.aws.access-key-id",
+      "type": "java.lang.String",
+      "description": "AWS access key ID. If not specified, the default AWS credential chain will be used.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties"
+    },
+    {
+      "name": "cloud.aws.cloud-watch-collection.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether CloudWatch metric collection is enabled.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties$CloudWatchCollection",
+      "defaultValue": true
+    },
+    {
+      "name": "cloud.aws.cloud-watch-collection.metrics",
+      "type": "java.util.List<java.lang.String>",
+      "description": "CloudWatch metrics to collect. Default set includes common EC2 instance metrics.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties$CloudWatchCollection"
+    },
+    {
+      "name": "cloud.aws.cloud-watch-collection.period",
+      "type": "java.time.Duration",
+      "description": "CloudWatch metric collection period.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties$CloudWatchCollection",
+      "defaultValue": "5m"
+    },
+    {
+      "name": "cloud.aws.cloud-watch-collection.statistics",
+      "type": "java.util.List<java.lang.String>",
+      "description": "CloudWatch metric statistics to collect.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties$CloudWatchCollection"
+    },
+    {
+      "name": "cloud.aws.connection-timeout",
+      "type": "java.time.Duration",
+      "description": "Connection timeout for AWS API calls.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties",
+      "defaultValue": "10s"
+    },
+    {
+      "name": "cloud.aws.display-name",
+      "type": "java.lang.String",
+      "description": "Display name for this AWS provider instance.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties",
+      "defaultValue": "AWS Cloud Provider"
+    },
+    {
+      "name": "cloud.aws.ec2-discovery.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether EC2 instance discovery is enabled.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties$Ec2Discovery",
+      "defaultValue": true
+    },
+    {
+      "name": "cloud.aws.ec2-discovery.filter-by-tags",
+      "type": "java.util.List<java.lang.String>",
+      "description": "Filter EC2 instances by tag. Format: key=value",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties$Ec2Discovery"
+    },
+    {
+      "name": "cloud.aws.ec2-discovery.include-tags",
+      "type": "java.util.List<java.lang.String>",
+      "description": "EC2 instance tags to include as metadata.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties$Ec2Discovery"
+    },
+    {
+      "name": "cloud.aws.ec2-discovery.instance-states",
+      "type": "java.util.List<java.lang.String>",
+      "description": "Filter EC2 instances by instance state. Valid values: pending, running, stopping, stopped, shutting-down, terminated",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties$Ec2Discovery",
+      "defaultValue": "running"
+    },
+    {
+      "name": "cloud.aws.max-retries",
+      "type": "java.lang.Integer",
+      "description": "Maximum number of retries for AWS API calls.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties",
+      "defaultValue": 3
+    },
+    {
+      "name": "cloud.aws.provider-id",
+      "type": "java.lang.String",
+      "description": "Provider ID for this AWS provider instance.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties",
+      "defaultValue": "aws-default"
+    },
+    {
+      "name": "cloud.aws.read-timeout",
+      "type": "java.time.Duration",
+      "description": "Read timeout for AWS API calls.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "cloud.aws.regions",
+      "type": "java.util.List<java.lang.String>",
+      "description": "AWS regions to monitor. If empty, the provider will use the region from the environment.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties"
+    },
+    {
+      "name": "cloud.aws.role-arn",
+      "type": "java.lang.String",
+      "description": "AWS role ARN to assume. If specified, the provider will attempt to assume this role.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties"
+    },
+    {
+      "name": "cloud.aws.secret-access-key",
+      "type": "java.lang.String",
+      "description": "AWS secret access key. If not specified, the default AWS credential chain will be used.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties"
+    },
+    {
+      "name": "cloud.aws.session-token",
+      "type": "java.lang.String",
+      "description": "AWS session token for temporary credentials.",
+      "sourceType": "org.opennms.bridge.aws.AwsConfigurationProperties"
+    }
+  ],
+  "hints": []
+}

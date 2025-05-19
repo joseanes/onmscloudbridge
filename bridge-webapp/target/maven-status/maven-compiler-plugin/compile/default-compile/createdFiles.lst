@@ -1,0 +1,15 @@
+org/opennms/bridge/webapp/controller/CloudProviderController.class
+org/opennms/bridge/webapp/config/JacksonConfig.class
+org/opennms/bridge/webapp/service/MockDiscoveryService.class
+org/opennms/bridge/webapp/controller/OpenNMSController.class
+org/opennms/bridge/webapp/service/MockCollectionService.class
+org/opennms/bridge/webapp/Application.class
+org/opennms/bridge/webapp/controller/DashboardController.class
+org/opennms/bridge/webapp/config/RestConfig.class
+org/opennms/bridge/webapp/controller/DiscoveryController$DiscoveryJob.class
+org/opennms/bridge/webapp/config/BeanConfig.class
+org/opennms/bridge/webapp/controller/CollectionController$CollectionJob.class
+org/opennms/bridge/webapp/controller/CollectionController.class
+org/opennms/bridge/webapp/controller/DiscoveryController.class
+org/opennms/bridge/webapp/service/MockAwsCloudProvider.class
+org/opennms/bridge/webapp/WebConfig.class

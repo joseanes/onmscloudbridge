@@ -1,0 +1,13 @@
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/controller/DiscoveryController.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/config/BeanConfig.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/config/JacksonConfig.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/config/RestConfig.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/service/MockDiscoveryService.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/controller/CloudProviderController.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/WebConfig.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/Application.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/service/MockCollectionService.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/controller/DashboardController.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/controller/OpenNMSController.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/service/MockAwsCloudProvider.java
+/Users/anes/dev/onmscloudbridge/bridge-webapp/src/main/java/org/opennms/bridge/webapp/controller/CollectionController.java

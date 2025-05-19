@@ -1,0 +1,5 @@
+org/opennms/bridge/core/service/DefaultCollectionService.class
+org/opennms/bridge/core/service/OpenNMSClient$1.class
+org/opennms/bridge/core/service/SchedulerService.class
+org/opennms/bridge/core/service/OpenNMSClient.class
+org/opennms/bridge/core/service/DefaultDiscoveryService.class

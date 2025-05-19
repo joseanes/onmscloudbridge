@@ -1,0 +1,7 @@
+META-INF/spring-configuration-metadata.json
+org/opennms/bridge/aws/AwsConfigurationProperties$Ec2Discovery.class
+org/opennms/bridge/aws/AwsDiscoveryStrategy.class
+org/opennms/bridge/aws/AwsMetricCollector.class
+org/opennms/bridge/aws/AwsConfigurationProperties$CloudWatchCollection.class
+org/opennms/bridge/aws/AwsConfigurationProperties.class
+org/opennms/bridge/aws/AwsCloudProvider.class

@@ -1,0 +1,58 @@
+# OpenNMS Configuration (dummy values for testing)
+opennms:
+  base-url: http://localhost:8980/opennms
+  username: admin
+  password: admin
+  default-location: Default
+
+# Cloud Providers
+cloud-providers:
+  aws:
+    - name: "Test AWS"
+      regions: ["us-east-1", "us-west-2"]
+      credentials:
+        access-key-id: "${AWS_ACCESS_KEY_ID:dummy-key}"
+        secret-access-key: "${AWS_SECRET_ACCESS_KEY:dummy-secret}"
+
+# Discovery and Collection
+scheduler:
+  discovery:
+    enabled: true
+    initial-delay: 30s
+    interval: 5m
+  collection:
+    enabled: true
+    initial-delay: 1m
+    interval: 60s
+
+# Application
+server:
+  port: 8081
+  servlet:
+    context-path: /bridge
+
+# Logging
+logging:
+  level:
+    org.opennms.bridge: DEBUG
+    org.springframework: INFO
+
+# Spring
+spring:
+  application:
+    name: OpenNMS Cloud Bridge
+  # Jackson configuration for Java 8 date/time
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: true
+    default-property-inclusion: non_null
+    # Enable Java 8 date/time module explicitly
+    modules:
+      enabled:
+        - "com.fasterxml.jackson.datatype.jsr310.JavaTimeModule"
+  # Security config removed to disable login prompt
+  # security:
+  #   user:
+  #     name: admin
+  #     password: admin

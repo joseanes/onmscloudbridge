@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f5f5f5;
+            white-space: pre-wrap;
+        }
+        button {
+            margin: 5px;
+            padding: 8px 16px;
+            background-color: #3465a4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>OpenNMS Cloud Bridge API Test</h1>
+    
+    <div>
+        <button id="test-providers">Test Cloud Providers</button>
+        <button id="test-dashboard">Test Dashboard</button>
+        <button id="test-discovery">Test Discovery Jobs</button>
+        <button id="test-collection">Test Collection Jobs</button>
+        <button id="test-discovery-start">Start Discovery</button>
+        <button id="test-collection-start">Start Collection</button>
+    </div>
+    
+    <div class="results" id="results">
+        Results will appear here...
+    </div>
+    
+    <script>
+        // API endpoints
+        const API_URL = {
+            dashboard: '/bridge/api/dashboard/summary',
+            providers: '/bridge/api/cloud-providers',
+            discovery: '/bridge/api/discovery/jobs',
+            collection: '/bridge/api/collection/jobs',
+            startDiscovery: '/bridge/api/discovery/start?providerId=aws-mock',
+            startCollection: '/bridge/api/collection/start?providerId=aws-mock'
+        };
+
+        const resultsDiv = document.getElementById('results');
+        
+        // Fetch and display data
+        async function fetchData(url, method = 'GET') {
+            try {
+                resultsDiv.textContent = `Fetching ${url} with method ${method}...`;
+                
+                const options = {
+                    method: method,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                };
+                
+                const response = await fetch(url, options);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                resultsDiv.textContent = JSON.stringify(data, null, 2);
+                
+                return data;
+            } catch (error) {
+                resultsDiv.textContent = `Error fetching data: ${error.message}`;
+                console.error('Fetch error:', error);
+                return null;
+            }
+        }
+
+        // Set up event handlers
+        document.getElementById('test-providers').addEventListener('click', () => {
+            fetchData(API_URL.providers);
+        });
+        
+        document.getElementById('test-dashboard').addEventListener('click', () => {
+            fetchData(API_URL.dashboard);
+        });
+        
+        document.getElementById('test-discovery').addEventListener('click', () => {
+            fetchData(API_URL.discovery);
+        });
+        
+        document.getElementById('test-collection').addEventListener('click', () => {
+            fetchData(API_URL.collection);
+        });
+        
+        document.getElementById('test-discovery-start').addEventListener('click', () => {
+            fetchData(API_URL.startDiscovery, 'POST');
+        });
+        
+        document.getElementById('test-collection-start').addEventListener('click', () => {
+            fetchData(API_URL.startCollection, 'POST');
+        });
+    </script>
+</body>
+</html>

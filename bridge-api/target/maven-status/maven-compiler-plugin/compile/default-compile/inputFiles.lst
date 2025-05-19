@@ -1,0 +1,13 @@
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/DiscoveredNode.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/DiscoveryConfiguration.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/CollectionStatus.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/DiscoveryService.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/CollectionConfiguration.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/MetricCollection.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/CollectionResult.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/CollectionService.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/CloudProviderException.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/CloudResource.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/DiscoveryStatus.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/ValidationResult.java
+/Users/anes/dev/onmscloudbridge/bridge-api/src/main/java/org/opennms/bridge/api/CloudProvider.java
