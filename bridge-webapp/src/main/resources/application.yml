@@ -11,6 +11,8 @@ spring:
       write-dates-as-timestamps: false
       indent-output: true
     default-property-inclusion: non_null
+  main:
+    allow-circular-references: true
   
 # Security configuration
 security:
@@ -46,8 +48,97 @@ bridge:
     max-concurrent-jobs: 5
     # Default timeout for discovery jobs in seconds
     default-timeout: 300
+    # Discovery logs configuration
+    logs:
+      # Set to false to use real log service instead of mock
+      useMock: true
+      # Maximum number of logs to keep per provider
+      maxLogs: 100
   collection:
     # Default interval for scheduled collections in minutes
     default-interval: 15
     # Maximum number of concurrent collection jobs
     max-concurrent-jobs: 10
+  # Debug configuration
+  debug:
+    # Enable debug mode globally
+    enabled: false
+    # Default debug flags for AWS providers
+    aws:
+      # Enable extreme debug mode for AWS provider
+      extreme_debug: false
+      # Enable emergency bypass mode for AWS provider - preserves credentials on update
+      emergency_bypass: false
+      # Debug log directory - if specified, writes will go here instead of /tmp
+      log_directory: logs
+      # Log output options
+      log_stdout: true
+      log_file: true
+      # Maximum debug file size in MB
+      max_log_size: 10
+
+# Cloud provider configuration
+cloud:
+  # Set to false to use real cloud providers instead of mock implementations
+  providers:
+    useMock: false
+  
+  # AWS Cloud Provider Configuration
+  aws:
+    # Provider identification
+    providerId: aws-default
+    displayName: AWS Cloud Provider
+    
+    # AWS credentials (leave empty to use default credential provider chain)
+    # accessKeyId: 
+    # secretAccessKey: 
+    # sessionToken:
+    # roleArn:
+    
+    # AWS regions to monitor (leave empty to use current region)
+    regions:
+      - us-east-1
+      - us-west-2
+    
+    # Connection settings
+    connectionTimeout: 10s
+    readTimeout: 30s
+    maxRetries: 3
+    
+    # EC2 discovery configuration
+    ec2Discovery:
+      enabled: true
+      includeTags:
+        - Name
+        - Environment
+        - Service
+      filterByTags:
+        - Environment=Production
+      instanceStates:
+        - running
+    
+    # CloudWatch metric collection configuration
+    cloudWatchCollection:
+      enabled: true
+      metrics:
+        - CPUUtilization
+        - NetworkIn
+        - NetworkOut
+        - DiskReadBytes
+        - DiskWriteBytes
+        - StatusCheckFailed
+      period: 5m
+      statistics:
+        - Average
+        - Maximum
+        - Minimum
+
+# OpenNMS Configuration
+opennms:
+  base-url: http://localhost:8980
+  username: admin
+  password: admin
+  connection-timeout: 30s
+  read-timeout: 60s
+  max-retries: 3
+  default-location: Default

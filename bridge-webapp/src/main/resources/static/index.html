@@ -75,6 +75,7 @@
             text-decoration: none;
             font-weight: bold;
             cursor: pointer;
+            border: none;
         }
         .loading {
             text-align: center;
@@ -106,12 +107,34 @@
             padding: 5px;
             font-size: 14px;
         }
+        
+        /* Debug link */
+        .debug-menu {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: rgba(255,255,255,0.7);
+            font-size: 12px;
+        }
+        .debug-menu a {
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+            padding: 5px;
+        }
+        .debug-menu a:hover {
+            color: white;
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
     <header>
         <div class="container">
             <h1>OpenNMS Cloud Bridge</h1>
+            <!-- Debug menu removed -->
+            <div class="debug-menu" style="display: none;">
+                <a href="debug-aws.html" target="_blank">AWS Debug Tool</a>
+            </div>
         </div>
     </header>
     
@@ -137,6 +160,9 @@
         <div class="card">
             <h2>Cloud Providers</h2>
             <button id="refresh-providers" class="refresh-button">↻ Refresh</button>
+            <div style="margin-bottom: 15px;">
+                <button id="add-aws-provider" class="button" style="background-color: #4CAF50;">+ Add New AWS Provider</button>
+            </div>
             <div id="providers-table">
                 <div class="loading">Loading providers...</div>
             </div>
@@ -193,10 +219,220 @@
                 </div>
 
                 <div style="text-align: right; margin-top: 20px;">
+                    <button type="button" id="test-opennms-connection" class="button" style="background-color: #4e9a06; margin-right: 10px;">Test Credentials</button>
                     <button type="button" id="cancel-config" class="button" style="background-color: #777; margin-right: 10px;">Cancel</button>
+                    <button type="submit" id="save-opennms-config" class="button" disabled>Save Changes</button>
+                </div>
+                <div id="opennms-test-result" style="margin-top: 15px;"></div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Modal for AWS Provider Configuration -->
+    <div id="aws-config-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: relative; margin: 5% auto; padding: 20px; background-color: white; width: 700px; max-height: 80vh; overflow-y: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+            <span id="close-aws-modal" style="position: absolute; top: 10px; right: 20px; font-size: 24px; cursor: pointer; color: #777;">&times;</span>
+            <h2 style="margin-top: 0; color: #204a87;">AWS Cloud Provider Configuration</h2>
+            <div id="aws-config-messages" style="margin-bottom: 15px;"></div>
+            
+            <form id="aws-config-form">
+                <h3 style="color: #555; margin-top: 0;">Basic Settings</h3>
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-provider-id" style="display: block; margin-bottom: 5px; font-weight: bold;">Provider ID:</label>
+                    <input type="text" id="aws-provider-id" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="aws-default">
+                    <small style="color: #777;">Unique identifier for this AWS provider</small>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-display-name" style="display: block; margin-bottom: 5px; font-weight: bold;">Display Name:</label>
+                    <input type="text" id="aws-display-name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="AWS Cloud Provider">
+                </div>
+
+                <h3 style="color: #555; border-top: 1px solid #eee; padding-top: 15px;">AWS Credentials</h3>
+                <p style="margin-top: 0; color: #777;">Leave blank to use default credential provider chain (environment variables, profile, EC2 instance role)</p>
+                
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-access-key" style="display: block; margin-bottom: 5px; font-weight: bold;">Access Key ID:</label>
+                    <input type="text" id="aws-access-key" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="AKIAIOSFODNN7EXAMPLE">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-secret-key" style="display: block; margin-bottom: 5px; font-weight: bold;">Secret Access Key:</label>
+                    <input type="password" id="aws-secret-key" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-role-arn" style="display: block; margin-bottom: 5px; font-weight: bold;">Role ARN (optional):</label>
+                    <input type="text" id="aws-role-arn" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="arn:aws:iam::123456789012:role/monitoring-role">
+                    <small style="color: #777;">AWS IAM role to assume (if required)</small>
+                </div>
+
+                <h3 style="color: #555; border-top: 1px solid #eee; padding-top: 15px;">Regions</h3>
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-regions" style="display: block; margin-bottom: 5px; font-weight: bold;">AWS Regions:</label>
+                    <input type="text" id="aws-regions" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="us-east-1, us-west-2">
+                    <small style="color: #777;">Comma-separated list of AWS regions to monitor (leave blank to use current region)</small>
+                </div>
+
+                <h3 style="color: #555; border-top: 1px solid #eee; padding-top: 15px;">EC2 Discovery Settings</h3>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Discovery Enabled:</label>
+                    <label style="font-weight: normal;">
+                        <input type="checkbox" id="aws-ec2-enabled" checked>
+                        Enable EC2 instance discovery
+                    </label>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-instance-states" style="display: block; margin-bottom: 5px; font-weight: bold;">Instance States:</label>
+                    <select id="aws-instance-states" multiple style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; height: 100px;">
+                        <option value="pending">pending</option>
+                        <option value="running" selected>running</option>
+                        <option value="stopping">stopping</option>
+                        <option value="stopped">stopped</option>
+                        <option value="shutting-down">shutting-down</option>
+                        <option value="terminated">terminated</option>
+                    </select>
+                    <small style="color: #777;">Hold Ctrl/Cmd to select multiple states</small>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-include-tags" style="display: block; margin-bottom: 5px; font-weight: bold;">Tags to Include:</label>
+                    <input type="text" id="aws-include-tags" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                           placeholder="Name, Environment, Service">
+                    <small style="color: #777;">Comma-separated list of EC2 tags to include as metadata</small>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-filter-tags" style="display: block; margin-bottom: 5px; font-weight: bold;">Filter by Tags:</label>
+                    <textarea id="aws-filter-tags" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; height: 80px;" 
+                              placeholder="Environment=Production&#10;Service=API"></textarea>
+                    <small style="color: #777;">One tag filter per line, format: key=value</small>
+                </div>
+
+                <h3 style="color: #555; border-top: 1px solid #eee; padding-top: 15px;">CloudWatch Metrics</h3>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Metric Collection Enabled:</label>
+                    <label style="font-weight: normal;">
+                        <input type="checkbox" id="aws-cloudwatch-enabled" checked>
+                        Enable CloudWatch metric collection
+                    </label>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-metrics" style="display: block; margin-bottom: 5px; font-weight: bold;">Metrics to Collect:</label>
+                    <select id="aws-metrics" multiple style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; height: 150px;">
+                        <option value="CPUUtilization" selected>CPUUtilization</option>
+                        <option value="NetworkIn" selected>NetworkIn</option>
+                        <option value="NetworkOut" selected>NetworkOut</option>
+                        <option value="DiskReadBytes" selected>DiskReadBytes</option>
+                        <option value="DiskWriteBytes" selected>DiskWriteBytes</option>
+                        <option value="StatusCheckFailed" selected>StatusCheckFailed</option>
+                        <option value="StatusCheckFailed_Instance">StatusCheckFailed_Instance</option>
+                        <option value="StatusCheckFailed_System">StatusCheckFailed_System</option>
+                        <option value="MemoryUtilization">MemoryUtilization</option>
+                        <option value="DiskSpaceUtilization">DiskSpaceUtilization</option>
+                    </select>
+                    <small style="color: #777;">Hold Ctrl/Cmd to select multiple metrics</small>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-statistics" style="display: block; margin-bottom: 5px; font-weight: bold;">Statistics to Collect:</label>
+                    <select id="aws-statistics" multiple style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; height: 100px;">
+                        <option value="Average" selected>Average</option>
+                        <option value="Maximum" selected>Maximum</option>
+                        <option value="Minimum" selected>Minimum</option>
+                        <option value="Sum">Sum</option>
+                        <option value="SampleCount">SampleCount</option>
+                    </select>
+                    <small style="color: #777;">Hold Ctrl/Cmd to select multiple statistics</small>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="aws-period" style="display: block; margin-bottom: 5px; font-weight: bold;">Collection Period:</label>
+                    <select id="aws-period" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="1">1 minute</option>
+                        <option value="5" selected>5 minutes</option>
+                        <option value="15">15 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">1 hour</option>
+                    </select>
+                </div>
+
+                <div style="text-align: right; margin-top: 20px;">
+                    <button type="button" id="cancel-aws-config" class="button" style="background-color: #777; margin-right: 10px;">Cancel</button>
+                    <button type="button" id="test-aws-connection" class="button" style="background-color: #4e9a06; margin-right: 10px;">Test Connection</button>
+                    <button type="button" id="update-display-name-only" class="button" style="background-color: #f57900; margin-right: 10px;">Update Name Only</button>
                     <button type="submit" class="button">Save Changes</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Modal for Provider Resources -->
+    <div id="resources-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: relative; margin: 5% auto; padding: 20px; background-color: white; width: 800px; max-height: 80vh; overflow-y: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+            <span id="close-resources-modal" style="position: absolute; top: 10px; right: 20px; font-size: 24px; cursor: pointer; color: #777;">&times;</span>
+            <h2 id="resources-title" style="margin-top: 0; color: #204a87;">Cloud Resources</h2>
+            <div id="resources-loading" class="loading">Loading resource details...</div>
+            <div id="resources-content">
+                <div id="resources-summary" style="margin-bottom: 15px;"></div>
+                <div id="resources-table-container" style="overflow-x: auto;">
+                    <table id="resources-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Region</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resources-tbody">
+                        </tbody>
+                    </table>
+                </div>
+                <div style="text-align: right; margin-top: 20px;">
+                    <button type="button" id="close-resources-btn" class="button" style="background-color: #777;">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for Discovery Logs -->
+    <div id="discovery-logs-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: relative; margin: 5% auto; padding: 20px; background-color: white; width: 800px; max-height: 80vh; overflow-y: auto; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+            <span id="close-logs-modal" style="position: absolute; top: 10px; right: 20px; font-size: 24px; cursor: pointer; color: #777;">&times;</span>
+            <h2 id="logs-title" style="margin-top: 0; color: #204a87;">Discovery Logs</h2>
+            <div id="logs-loading" class="loading">Loading discovery logs...</div>
+            <div id="logs-content">
+                <div id="logs-summary" style="margin-bottom: 15px;"></div>
+                <div id="logs-container" style="overflow-x: auto; max-height: 60vh;">
+                    <table id="logs-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Level</th>
+                                <th>Component</th>
+                                <th>Message</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-tbody">
+                        </tbody>
+                    </table>
+                </div>
+                <div style="text-align: right; margin-top: 20px;">
+                    <button type="button" id="refresh-logs-btn" class="button" style="background-color: #3465a4; margin-right: 10px;">Refresh Logs</button>
+                    <button type="button" id="close-logs-btn" class="button" style="background-color: #777;">Close</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -210,8 +446,13 @@
             opennms: '/bridge/api/opennms/connection',
             opennmsTest: '/bridge/api/opennms/test-connection',
             opennmsStatus: '/bridge/api/opennms/status',
+            awsTest: '/bridge/api/cloud-providers/test-connection',
+            awsUpdateName: (id) => `/bridge/api/cloud-providers/${id}/display-name`,
             startDiscovery: (provider) => `/bridge/api/discovery/start?providerId=${provider}`,
-            startCollection: (provider) => `/bridge/api/collection/start?providerId=${provider}`
+            startCollection: (provider) => `/bridge/api/collection/start?providerId=${provider}`,
+            providerResources: (provider) => `/bridge/api/cloud-providers/${provider}/resources`,
+            deleteProvider: (id) => `/bridge/api/cloud-providers/${id}`,
+            discoveryLogs: (provider) => `/bridge/api/discovery/logs/${provider}`
         };
 
         // Fetch data from API
@@ -339,14 +580,16 @@
                 
                 html += `
                     <tr>
-                        <td>${provider.name}</td>
+                        <td><a href="#" onclick="showProviderConfig('${provider.id}', '${provider.type}'); return false;">${provider.name}</a></td>
                         <td><span class="status-indicator ${statusClass}"></span> ${statusText}</td>
                         <td>${provider.type.toUpperCase()}</td>
-                        <td id="provider-resources-${provider.id}">Loading...</td>
+                        <td><a href="#" onclick="showProviderResources('${provider.id}'); return false;" id="provider-resources-${provider.id}">Loading...</a></td>
                         <td>${Array.isArray(provider.regions) ? provider.regions.join(', ') : (provider.regions || '-')}</td>
                         <td>
                             <button class="button" onclick="startDiscovery('${provider.id}')">Discover</button>
                             <button class="button" onclick="startCollection('${provider.id}')">Collect</button>
+                            <button class="button" style="background-color: #555;" onclick="showProviderConfig('${provider.id}', '${provider.type}')">Configure</button>
+                            <button class="button" style="background-color: #cc0000;" onclick="deleteProvider('${provider.id}')">Delete</button>
                         </td>
                     </tr>
                 `;
@@ -359,15 +602,38 @@
             
             providersElement.innerHTML = html;
             
-            // Load resource counts from dashboard data
-            const dashboardData = await fetchData(API_URL.dashboard);
-            if (dashboardData && dashboardData.providers) {
-                dashboardData.providers.forEach(providerData => {
-                    const element = document.getElementById(`provider-resources-${providerData.id}`);
+            // Load resource counts for each provider
+            for (const provider of data) {
+                try {
+                    // Get the element
+                    const element = document.getElementById(`provider-resources-${provider.id}`);
                     if (element) {
-                        element.textContent = providerData.resourceCount || 0;
+                        // Try to get resources from the provider resources endpoint
+                        const resources = await fetchData(API_URL.providerResources(provider.id));
+                        if (Array.isArray(resources)) {
+                            element.textContent = resources.length;
+                        } else {
+                            // Fallback to dashboard data if resources endpoint fails
+                            const dashboardData = await fetchData(API_URL.dashboard);
+                            if (dashboardData && dashboardData.providers) {
+                                const providerData = dashboardData.providers.find(p => p.id === provider.id);
+                                if (providerData) {
+                                    element.textContent = providerData.resourceCount || 0;
+                                } else {
+                                    element.textContent = '0';
+                                }
+                            } else {
+                                element.textContent = '0';
+                            }
+                        }
                     }
-                });
+                } catch (error) {
+                    console.error(`Error loading resources for provider ${provider.id}:`, error);
+                    const element = document.getElementById(`provider-resources-${provider.id}`);
+                    if (element) {
+                        element.textContent = '0';
+                    }
+                }
             }
         }
 
@@ -396,28 +662,109 @@
                             <th>Last Run</th>
                             <th>Status</th>
                             <th>Resources Found</th>
+                            <th>Discovery Logs</th>
+                            <th>Details</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
             
-            data.jobs.forEach(job => {
+            // Group jobs by provider and get only the most recent one for each provider
+            const providerJobs = new Map();
+            
+            // Sort jobs by endTime (desc) or startTime (desc) to get most recent first
+            const sortedJobs = [...data.jobs].sort((a, b) => {
+                // If either job is in STARTED state, it should be the most recent
+                if (a.status === 'STARTED' && b.status !== 'STARTED') return -1;
+                if (b.status === 'STARTED' && a.status !== 'STARTED') return 1;
+                
+                // If both have endTime, sort by endTime (most recent first)
+                if (a.endTime && b.endTime) {
+                    return new Date(b.endTime) - new Date(a.endTime);
+                }
+                
+                // If only one has endTime, the one without is more recent (in progress)
+                if (a.endTime && !b.endTime) return 1;
+                if (!a.endTime && b.endTime) return -1;
+                
+                // If neither has endTime, sort by startTime (most recent first)
+                if (a.startTime && b.startTime) {
+                    return new Date(b.startTime) - new Date(a.startTime);
+                }
+                
+                return 0;
+            });
+            
+            // Keep only the most recent job for each provider
+            sortedJobs.forEach(job => {
+                if (!providerJobs.has(job.providerId)) {
+                    providerJobs.set(job.providerId, job);
+                }
+            });
+            
+            // Display the most recent job for each provider
+            for (const job of providerJobs.values()) {
                 const statusClass = getStatusClass(job.status);
                 const endTime = job.endTime ? formatDate(job.endTime) : 'In Progress';
                 
+                // Prepare discovery log/details data
+                let detailsHtml = '';
+                
+                // Add discovery details
+                if (job.logDetails && job.logDetails.length > 0) {
+                    // If we have structured log data
+                    detailsHtml = `<ul style="margin: 0; padding-left: 20px; max-height: 100px; overflow-y: auto;">`;
+                    job.logDetails.forEach(entry => {
+                        detailsHtml += `<li>${entry}</li>`;
+                    });
+                    detailsHtml += `</ul>`;
+                } else if (job.message) {
+                    // If we have a simple message
+                    detailsHtml = job.message;
+                } else if (job.results) {
+                    // If we have results object
+                    detailsHtml = `<ul style="margin: 0; padding-left: 20px;">`;
+                    Object.entries(job.results).forEach(([key, value]) => {
+                        if (key !== 'resourceCount') { // Skip resourceCount as it's already shown
+                            detailsHtml += `<li><strong>${key}:</strong> ${value}</li>`;
+                        }
+                    });
+                    detailsHtml += `</ul>`;
+                } else {
+                    // Default message based on status
+                    if (job.status === 'STARTED') {
+                        detailsHtml = 'Discovery in progress...';
+                    } else if (job.status === 'COMPLETED') {
+                        detailsHtml = `Discovered ${job.resourceCount || 0} resources`;
+                    } else if (job.status === 'FAILED') {
+                        detailsHtml = 'Discovery failed. Check logs for details.';
+                    }
+                }
+                
+                // Add discovery regions if available
+                if (job.regions && job.regions.length > 0) {
+                    if (detailsHtml) {
+                        detailsHtml += '<br>';
+                    }
+                    detailsHtml += `<span style="color: #555;">Regions: ${job.regions.join(', ')}</span>`;
+                }
+                
+                // Add the job row
                 html += `
                     <tr>
                         <td>${job.providerId}</td>
                         <td>${endTime}</td>
                         <td><span class="status-indicator ${statusClass}"></span> ${job.status}</td>
                         <td>${job.resourceCount || 0}</td>
+                        <td style="max-width: 300px; font-size: 0.9em;">${detailsHtml || 'No details available'}</td>
                         <td>
+                            <button class="button" onclick="viewDiscoveryLogs('${job.providerId}')" style="background-color: #3465a4; margin-right: 5px;">View Logs</button>
                             <button class="button" onclick="startDiscovery('${job.providerId}')">Run Again</button>
                         </td>
                     </tr>
                 `;
-            });
+            }
             
             html += `
                     </tbody>
@@ -452,28 +799,108 @@
                             <th>Last Run</th>
                             <th>Status</th>
                             <th>Metrics Collected</th>
+                            <th>Details</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
             
-            data.jobs.forEach(job => {
+            // Group jobs by provider and get only the most recent one for each provider
+            const providerJobs = new Map();
+            
+            // Sort jobs by endTime (desc) or startTime (desc) to get most recent first
+            const sortedJobs = [...data.jobs].sort((a, b) => {
+                // If either job is in STARTED state, it should be the most recent
+                if (a.status === 'STARTED' && b.status !== 'STARTED') return -1;
+                if (b.status === 'STARTED' && a.status !== 'STARTED') return 1;
+                
+                // If both have endTime, sort by endTime (most recent first)
+                if (a.endTime && b.endTime) {
+                    return new Date(b.endTime) - new Date(a.endTime);
+                }
+                
+                // If only one has endTime, the one without is more recent (in progress)
+                if (a.endTime && !b.endTime) return 1;
+                if (!a.endTime && b.endTime) return -1;
+                
+                // If neither has endTime, sort by startTime (most recent first)
+                if (a.startTime && b.startTime) {
+                    return new Date(b.startTime) - new Date(a.startTime);
+                }
+                
+                return 0;
+            });
+            
+            // Keep only the most recent job for each provider
+            sortedJobs.forEach(job => {
+                if (!providerJobs.has(job.providerId)) {
+                    providerJobs.set(job.providerId, job);
+                }
+            });
+            
+            // Display the most recent job for each provider
+            for (const job of providerJobs.values()) {
                 const statusClass = getStatusClass(job.status);
                 const endTime = job.endTime ? formatDate(job.endTime) : 'In Progress';
                 
+                // Prepare collection log/details data
+                let detailsHtml = '';
+                
+                // Add collection details
+                if (job.logDetails && job.logDetails.length > 0) {
+                    // If we have structured log data
+                    detailsHtml = `<ul style="margin: 0; padding-left: 20px; max-height: 100px; overflow-y: auto;">`;
+                    job.logDetails.forEach(entry => {
+                        detailsHtml += `<li>${entry}</li>`;
+                    });
+                    detailsHtml += `</ul>`;
+                } else if (job.message) {
+                    // If we have a simple message
+                    detailsHtml = job.message;
+                } else if (job.results) {
+                    // If we have results object
+                    detailsHtml = `<ul style="margin: 0; padding-left: 20px;">`;
+                    Object.entries(job.results).forEach(([key, value]) => {
+                        if (key !== 'metricCount') { // Skip metricCount as it's already shown
+                            detailsHtml += `<li><strong>${key}:</strong> ${value}</li>`;
+                        }
+                    });
+                    detailsHtml += `</ul>`;
+                } else {
+                    // Default message based on status
+                    if (job.status === 'STARTED') {
+                        detailsHtml = 'Collection in progress...';
+                    } else if (job.status === 'COMPLETED') {
+                        detailsHtml = `Collected ${job.metricCount || 0} metrics`;
+                    } else if (job.status === 'FAILED') {
+                        detailsHtml = 'Collection failed. Check logs for details.';
+                    }
+                }
+                
+                // Add collection metrics if available
+                if (job.metrics && job.metrics.length > 0) {
+                    if (detailsHtml) {
+                        detailsHtml += '<br>';
+                    }
+                    detailsHtml += `<span style="color: #555;">Metrics: ${job.metrics.join(', ')}</span>`;
+                }
+                
+                // Add the job row
                 html += `
                     <tr>
                         <td>${job.providerId}</td>
                         <td>${endTime}</td>
                         <td><span class="status-indicator ${statusClass}"></span> ${job.status}</td>
                         <td>${job.metricCount || 0}</td>
+                        <td style="max-width: 300px; font-size: 0.9em;">${detailsHtml || 'No details available'}</td>
                         <td>
+                            <button class="button" onclick="viewDiscoveryLogs('${job.providerId}')" style="background-color: #3465a4; margin-right: 5px;">View Logs</button>
                             <button class="button" onclick="startCollection('${job.providerId}')">Run Again</button>
                         </td>
                     </tr>
                 `;
-            });
+            }
             
             html += `
                     </tbody>
@@ -508,8 +935,14 @@
                 console.log("Response data:", data);
                 alert(`Discovery started for provider '${providerId}'. Job ID: ${data.jobId}`);
                 
-                // Reload discovery jobs
+                // Reload discovery jobs and providers list
                 loadDiscoveryJobs();
+                
+                // After a short delay, refresh the providers list to update resource counts
+                setTimeout(() => {
+                    loadProviders();
+                    loadDashboardSummary();
+                }, 3000);
             } catch (error) {
                 console.error('Error starting discovery:', error);
                 alert(`Error starting discovery: ${error.message}`);
@@ -541,8 +974,14 @@
                 console.log("Response data:", data);
                 alert(`Collection started for provider '${providerId}'. Job ID: ${data.jobId}`);
                 
-                // Reload collection jobs
+                // Reload collection jobs and providers list
                 loadCollectionJobs();
+                
+                // After a short delay, refresh the providers list to update resource counts
+                setTimeout(() => {
+                    loadProviders();
+                    loadDashboardSummary();
+                }, 3000);
             } catch (error) {
                 console.error('Error starting collection:', error);
                 alert(`Error starting collection: ${error.message}`);
@@ -653,7 +1092,7 @@
             openNMSElement.innerHTML = html;
         }
         
-        // Test OpenNMS connection
+        // Test OpenNMS connection (existing button in main UI)
         async function testOpenNMSConnection() {
             const openNMSElement = document.getElementById('opennms-connection');
             const oldContent = openNMSElement.innerHTML;
@@ -682,6 +1121,118 @@
             } catch (error) {
                 openNMSElement.innerHTML = oldContent;
                 alert('Error testing connection: ' + error.message);
+            }
+        }
+        
+        // Test OpenNMS credentials from the configuration dialog
+        async function testOpenNMSCredentials() {
+            // Get form values
+            const url = document.getElementById('opennms-url').value.trim();
+            const username = document.getElementById('opennms-username').value.trim();
+            const password = document.getElementById('opennms-password').value.trim();
+            
+            // Validate inputs
+            if (!url) {
+                alert('OpenNMS URL is required');
+                return;
+            }
+            
+            if (!username) {
+                alert('Username is required');
+                return;
+            }
+            
+            if (!password) {
+                alert('Password is required');
+                return;
+            }
+            
+            // Show loading indicator
+            const resultDiv = document.getElementById('opennms-test-result');
+            resultDiv.innerHTML = `
+                <div class="alert" style="background-color: #cce5ff; color: #004085; padding: 10px; border-radius: 4px;">
+                    <strong>Testing connection...</strong>
+                </div>
+            `;
+            
+            // Disable test button
+            const testButton = document.getElementById('test-opennms-connection');
+            testButton.disabled = true;
+            testButton.textContent = 'Testing...';
+            
+            try {
+                // Send test request with the provided credentials
+                const response = await fetch('/bridge/api/opennms/validate-connection', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        baseUrl: url,
+                        username: username,
+                        password: password
+                    })
+                });
+                
+                const result = await response.json();
+                
+                // Re-enable test button
+                testButton.disabled = false;
+                testButton.textContent = 'Test Credentials';
+                
+                // Display result
+                if (result.success) {
+                    resultDiv.innerHTML = `
+                        <div class="alert" style="background-color: #d4edda; color: #155724; padding: 10px; border-radius: 4px;">
+                            <strong>Connection successful!</strong>
+                            <p>${result.message || 'Connected to OpenNMS successfully.'}</p>
+                        </div>
+                    `;
+                    
+                    // Enable save button
+                    document.getElementById('save-opennms-config').disabled = false;
+                } else {
+                    // Format detailed error message
+                    let errorDetails = '';
+                    if (result.detailMessage) {
+                        errorDetails = `<p>${result.detailMessage}</p>`;
+                    }
+                    
+                    // Add raw curl command for reference
+                    const curlCommand = `curl -u ${username}:${password} "${url}/rest/"`;
+                    
+                    resultDiv.innerHTML = `
+                        <div class="alert" style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px;">
+                            <strong>Connection failed!</strong>
+                            <p>${result.message || 'Could not connect to OpenNMS.'}</p>
+                            ${errorDetails}
+                            <hr style="border-top: 1px solid rgba(0,0,0,0.1); margin: 10px 0;">
+                            <p style="font-family: monospace; font-size: 12px;">Equivalent curl command: ${curlCommand}</p>
+                            <p>This command should work if your OpenNMS installation is running and credentials are correct.</p>
+                        </div>
+                    `;
+                    
+                    // Keep save button disabled
+                    document.getElementById('save-opennms-config').disabled = true;
+                }
+            } catch (error) {
+                console.error('Error testing OpenNMS connection:', error);
+                
+                // Re-enable test button
+                testButton.disabled = false;
+                testButton.textContent = 'Test Credentials';
+                
+                // Show error message
+                resultDiv.innerHTML = `
+                    <div class="alert" style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px;">
+                        <strong>Error testing connection:</strong>
+                        <p>${error.message}</p>
+                        <p>Make sure the URL is correct and OpenNMS is running.</p>
+                    </div>
+                `;
+                
+                // Keep save button disabled
+                document.getElementById('save-opennms-config').disabled = true;
             }
         }
         
@@ -805,10 +1356,16 @@
             document.getElementById('refresh-discovery').addEventListener('click', loadDiscoveryJobs);
             document.getElementById('refresh-collection').addEventListener('click', loadCollectionJobs);
             
+            // Auto-refresh providers table every 30 seconds
+            setInterval(() => {
+                loadProviders();
+            }, 30000);
+            
             // Set up OpenNMS config modal events
             document.getElementById('close-modal').addEventListener('click', hideOpenNMSConfigModal);
             document.getElementById('cancel-config').addEventListener('click', hideOpenNMSConfigModal);
             document.getElementById('opennms-config-form').addEventListener('submit', submitOpenNMSConfig);
+            document.getElementById('test-opennms-connection').addEventListener('click', testOpenNMSCredentials);
             
             // Close modal when clicking outside
             const modal = document.getElementById('opennms-config-modal');
@@ -823,7 +1380,895 @@
             window.startCollection = startCollection;
             window.testOpenNMSConnection = testOpenNMSConnection;
             window.showOpenNMSConfigModal = showOpenNMSConfigModal;
+            window.showProviderConfig = showProviderConfig;
+            window.showProviderResources = showProviderResources;
+            window.deleteProvider = deleteProvider;
+            window.viewDiscoveryLogs = viewDiscoveryLogs;
         });
+        
+        // Provider configuration functions
+        let currentProviderId = null;
+
+        // Show provider configuration modal
+        async function showProviderConfig(providerId, providerType) {
+            currentProviderId = providerId;
+            
+            // Show the appropriate modal based on provider type
+            if (providerType === 'aws') {
+                await loadAwsProviderConfig(providerId);
+                document.getElementById('aws-config-modal').style.display = 'block';
+            } else {
+                alert(`Configuration for ${providerType} providers is not yet implemented.`);
+            }
+        }
+        
+        // Load AWS provider configuration
+        async function loadAwsProviderConfig(providerId) {
+            try {
+                const providerData = await fetchData(`${API_URL.providers}/${providerId}`);
+                
+                if (providerData.error) {
+                    alert(`Error loading provider configuration: ${providerData.error}`);
+                    return;
+                }
+                
+                // Fill form with provider data
+                document.getElementById('aws-provider-id').value = providerData.id || '';
+                document.getElementById('aws-display-name').value = providerData.name || '';
+                
+                // Access key is usually not returned for security
+                document.getElementById('aws-access-key').value = '';
+                document.getElementById('aws-secret-key').value = '';
+                
+                document.getElementById('aws-role-arn').value = providerData.roleArn || '';
+                
+                // Set regions
+                if (Array.isArray(providerData.regions)) {
+                    document.getElementById('aws-regions').value = providerData.regions.join(', ');
+                }
+                
+                // Set EC2 discovery settings
+                if (providerData.ec2Discovery) {
+                    document.getElementById('aws-ec2-enabled').checked = providerData.ec2Discovery.enabled !== false;
+                    
+                    // Set instance states
+                    const instanceStatesSelect = document.getElementById('aws-instance-states');
+                    for (let i = 0; i < instanceStatesSelect.options.length; i++) {
+                        const option = instanceStatesSelect.options[i];
+                        option.selected = providerData.ec2Discovery.instanceStates ? 
+                            providerData.ec2Discovery.instanceStates.includes(option.value) : false;
+                    }
+                    
+                    // Set include tags
+                    if (Array.isArray(providerData.ec2Discovery.includeTags)) {
+                        document.getElementById('aws-include-tags').value = providerData.ec2Discovery.includeTags.join(', ');
+                    }
+                    
+                    // Set filter tags
+                    if (Array.isArray(providerData.ec2Discovery.filterByTags)) {
+                        document.getElementById('aws-filter-tags').value = providerData.ec2Discovery.filterByTags.join('\n');
+                    }
+                }
+                
+                // Set CloudWatch settings
+                if (providerData.cloudWatchCollection) {
+                    document.getElementById('aws-cloudwatch-enabled').checked = providerData.cloudWatchCollection.enabled !== false;
+                    
+                    // Set metrics
+                    const metricsSelect = document.getElementById('aws-metrics');
+                    for (let i = 0; i < metricsSelect.options.length; i++) {
+                        const option = metricsSelect.options[i];
+                        option.selected = providerData.cloudWatchCollection.metrics ? 
+                            providerData.cloudWatchCollection.metrics.includes(option.value) : false;
+                    }
+                    
+                    // Set statistics
+                    const statisticsSelect = document.getElementById('aws-statistics');
+                    for (let i = 0; i < statisticsSelect.options.length; i++) {
+                        const option = statisticsSelect.options[i];
+                        option.selected = providerData.cloudWatchCollection.statistics ? 
+                            providerData.cloudWatchCollection.statistics.includes(option.value) : false;
+                    }
+                    
+                    // Set period
+                    if (providerData.cloudWatchCollection.period) {
+                        let periodMinutes = 5;
+                        if (typeof providerData.cloudWatchCollection.period === 'number') {
+                            periodMinutes = providerData.cloudWatchCollection.period;
+                        } else if (typeof providerData.cloudWatchCollection.period === 'string') {
+                            // Convert "5m" to 5
+                            const match = providerData.cloudWatchCollection.period.match(/^(\d+)m?$/);
+                            if (match) {
+                                periodMinutes = parseInt(match[1]);
+                            }
+                        }
+                        
+                        const periodSelect = document.getElementById('aws-period');
+                        for (let i = 0; i < periodSelect.options.length; i++) {
+                            if (parseInt(periodSelect.options[i].value) === periodMinutes) {
+                                periodSelect.selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading AWS provider configuration:', error);
+                alert(`Error loading AWS provider configuration: ${error.message}`);
+            }
+        }
+        
+        // Test AWS connection
+        async function testAwsConnection() {
+            // Proceed directly with the connection test
+            
+            const isNewProvider = !currentProviderId;
+            
+            try {
+                // Collect AWS config data for testing
+                const config = {
+                    type: 'aws',
+                    providerId: document.getElementById('aws-provider-id').value,
+                    displayName: document.getElementById('aws-display-name').value
+                };
+                
+                // Add credentials if provided
+                const accessKey = document.getElementById('aws-access-key').value;
+                const secretKey = document.getElementById('aws-secret-key').value;
+                
+                if (accessKey) {
+                    config.accessKeyId = accessKey;
+                }
+                
+                if (secretKey) {
+                    config.secretAccessKey = secretKey;
+                }
+                
+                // Add role ARN if provided
+                const roleArn = document.getElementById('aws-role-arn').value;
+                if (roleArn) {
+                    config.roleArn = roleArn;
+                }
+                
+                // Add regions
+                const regionsText = document.getElementById('aws-regions').value;
+                if (regionsText) {
+                    config.regions = regionsText.split(',').map(r => r.trim()).filter(r => r);
+                }
+                
+                // Add debug flags
+                config.debug = true;
+                config.verbose = true;
+                config.fullTrace = true;
+                
+                // Update UI
+                const testButton = document.getElementById('test-aws-connection');
+                const originalText = testButton.textContent;
+                testButton.textContent = 'Testing...';
+                testButton.disabled = true;
+                
+                // Show status message
+                const messagesDiv = document.getElementById('aws-config-messages');
+                messagesDiv.innerHTML = `
+                    <div class="alert" style="background-color: #cce5ff; color: #004085; padding: 10px; border-radius: 4px;">
+                        <strong>Testing AWS connection...</strong>
+                    </div>
+                `;
+                
+                // Use the test connection endpoint
+                const response = await fetch('/bridge/api/cloud-providers/test-connection?debug=true&verbose=true&fullTrace=true', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Debug-Mode': 'true'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                const responseText = await response.text();
+                console.log("Raw response:", responseText);
+                
+                let result;
+                try {
+                    result = JSON.parse(responseText);
+                } catch (e) {
+                    result = { 
+                        valid: false, 
+                        message: "Failed to parse JSON response",
+                        rawResponse: responseText
+                    };
+                }
+                
+                // Reset button
+                testButton.textContent = originalText;
+                testButton.disabled = false;
+                
+                // Show result message
+                messagesDiv.innerHTML = `
+                    <div class="alert" style="background-color: ${result.valid ? '#d4edda' : '#f8d7da'}; color: ${result.valid ? '#155724' : '#721c24'}; padding: 10px; border-radius: 4px;">
+                        <strong>${result.valid ? 'Connection successful' : 'Connection failed'}</strong>
+                        <p>${result.message || ''}</p>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error testing AWS connection:', error);
+                
+                // Update status message for unexpected error
+                const messagesDiv = document.getElementById('aws-config-messages');
+                messagesDiv.innerHTML = `
+                    <div class="alert" style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px;">
+                        <strong>Error testing connection: ${error.message}</strong>
+                    </div>
+                `;
+                
+                // Reset button
+                const testButton = document.getElementById('test-aws-connection');
+                testButton.textContent = 'Test Connection';
+                testButton.disabled = false;
+            }
+        }
+        
+        // Update display name only (preserves credentials)
+        async function updateDisplayNameOnly() {
+            if (!currentProviderId) {
+                alert('Cannot update display name - no provider selected');
+                return;
+            }
+            
+            try {
+                const displayName = document.getElementById('aws-display-name').value.trim();
+                
+                if (!displayName) {
+                    alert('Display name cannot be empty');
+                    return;
+                }
+                
+                // Show loading indicator
+                const messagesDiv = document.getElementById('aws-config-messages');
+                messagesDiv.innerHTML = `
+                    <div class="alert" style="background-color: #cce5ff; color: #004085; padding: 10px; border-radius: 4px;">
+                        <strong>Updating display name...</strong>
+                    </div>
+                `;
+                
+                // Send request to update only the display name
+                const response = await fetch(API_URL.awsUpdateName(currentProviderId), {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ displayName })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    messagesDiv.innerHTML = `
+                        <div class="alert" style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px;">
+                            <strong>Error updating display name:</strong> ${result.error}
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Show success message
+                messagesDiv.innerHTML = `
+                    <div class="alert" style="background-color: #d4edda; color: #155724; padding: 10px; border-radius: 4px;">
+                        <strong>Display name updated successfully!</strong>
+                        <p>The display name for provider "${currentProviderId}" has been updated to "${displayName}".</p>
+                        <p>This operation only updated the display name and preserved all other settings including credentials.</p>
+                    </div>
+                `;
+                
+                // Refresh the providers list
+                await loadProviders();
+                
+            } catch (error) {
+                console.error('Error updating display name:', error);
+                
+                const messagesDiv = document.getElementById('aws-config-messages');
+                messagesDiv.innerHTML = `
+                    <div class="alert" style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px;">
+                        <strong>Error updating display name:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        // Submit AWS configuration
+        async function submitAwsConfig(event) {
+            event.preventDefault();
+            
+            try {
+                // Determine if this is a new provider or updating an existing one
+                const isNewProvider = !currentProviderId;
+                const providerId = currentProviderId || document.getElementById('aws-provider-id').value;
+                const config = {
+                    type: 'aws',
+                    providerId: document.getElementById('aws-provider-id').value,
+                    displayName: document.getElementById('aws-display-name').value,
+                    verbose: true,  // Request verbose output
+                    fullTrace: true // Request full stack traces
+                };
+                
+                // Add credentials if provided
+                const accessKey = document.getElementById('aws-access-key').value;
+                const secretKey = document.getElementById('aws-secret-key').value;
+                
+                if (accessKey) {
+                    config.accessKeyId = accessKey;
+                }
+                
+                if (secretKey) {
+                    config.secretAccessKey = secretKey;
+                }
+                
+                // Add role ARN if provided
+                const roleArn = document.getElementById('aws-role-arn').value;
+                if (roleArn) {
+                    config.roleArn = roleArn;
+                }
+                
+                // Add regions
+                const regionsText = document.getElementById('aws-regions').value;
+                if (regionsText) {
+                    config.regions = regionsText.split(',').map(r => r.trim()).filter(r => r);
+                }
+                
+                // EC2 Discovery settings
+                config.ec2Discovery = {
+                    enabled: document.getElementById('aws-ec2-enabled').checked
+                };
+                
+                // Instance states
+                const instanceStatesSelect = document.getElementById('aws-instance-states');
+                const selectedStates = Array.from(instanceStatesSelect.selectedOptions).map(o => o.value);
+                config.ec2Discovery.instanceStates = selectedStates;
+                
+                // Include tags
+                const includeTagsText = document.getElementById('aws-include-tags').value;
+                if (includeTagsText) {
+                    config.ec2Discovery.includeTags = includeTagsText.split(',').map(t => t.trim()).filter(t => t);
+                }
+                
+                // Filter tags
+                const filterTagsText = document.getElementById('aws-filter-tags').value;
+                if (filterTagsText) {
+                    config.ec2Discovery.filterByTags = filterTagsText.split('\n')
+                        .map(t => t.trim())
+                        .filter(t => t && t.includes('='));
+                }
+                
+                // CloudWatch settings
+                config.cloudWatchCollection = {
+                    enabled: document.getElementById('aws-cloudwatch-enabled').checked
+                };
+                
+                // Metrics
+                const metricsSelect = document.getElementById('aws-metrics');
+                config.cloudWatchCollection.metrics = Array.from(metricsSelect.selectedOptions).map(o => o.value);
+                
+                // Statistics
+                const statisticsSelect = document.getElementById('aws-statistics');
+                config.cloudWatchCollection.statistics = Array.from(statisticsSelect.selectedOptions).map(o => o.value);
+                
+                // Period
+                const periodSelect = document.getElementById('aws-period');
+                const periodMinutes = periodSelect.options[periodSelect.selectedIndex].value;
+                config.cloudWatchCollection.period = periodMinutes + 'm';
+                
+                // Update messages
+                const messagesDiv = document.getElementById('aws-config-messages');
+                messagesDiv.innerHTML = `
+                    <div class="alert" style="background-color: #cce5ff; color: #004085; padding: 10px; border-radius: 4px;">
+                        <strong>Saving AWS provider configuration...</strong>
+                    </div>
+                `;
+                
+                // Show loading indicator
+                const submitButton = document.querySelector('#aws-config-form button[type="submit"]');
+                const originalText = submitButton.textContent;
+                submitButton.textContent = 'Saving...';
+                submitButton.disabled = true;
+                
+                // Submit configuration - POST for new provider, PUT for updating
+                const url = isNewProvider ? API_URL.providers : `${API_URL.providers}/${providerId}`;
+                const method = isNewProvider ? 'POST' : 'PUT';
+                
+                console.log('Submitting config:', config);
+                
+                const response = await fetch(`${url}?debug=true&verbose=true&fullTrace=true`, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Debug-Mode': 'true'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                submitButton.textContent = originalText;
+                submitButton.disabled = false;
+                
+                const responseText = await response.text();
+                console.log('Raw save response:', responseText);
+                
+                // Show result message
+                messagesDiv.innerHTML = `
+                    <div class="alert" style="background-color: ${response.ok ? '#d4edda' : '#f8d7da'}; color: ${response.ok ? '#155724' : '#721c24'}; padding: 10px; border-radius: 4px;">
+                        <strong>${response.ok ? 'Provider saved successfully' : 'Error saving provider'}</strong>
+                        <p>${response.ok ? 'The configuration has been updated.' : 'There was an error updating the configuration.'}</p>
+                    </div>
+                `;
+                
+                if (response.ok) {
+                    setTimeout(() => {
+                        hideAwsConfigModal();
+                        loadProviders();
+                    }, 3000);
+                }
+            } catch (error) {
+                console.error('Error updating AWS provider configuration:', error);
+                
+                const messagesDiv = document.getElementById('aws-config-messages');
+                messagesDiv.innerHTML = `
+                    <div class="alert" style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px;">
+                        <strong>Error updating AWS provider configuration:</strong> ${error.message}
+                    </div>
+                `;
+                
+                const submitButton = document.querySelector('#aws-config-form button[type="submit"]');
+                submitButton.textContent = 'Save Changes';
+                submitButton.disabled = false;
+            }
+        }
+        
+        // Hide AWS configuration modal
+        function hideAwsConfigModal() {
+            document.getElementById('aws-config-modal').style.display = 'none';
+            currentProviderId = null;
+        }
+        
+        // Add event listeners for AWS configuration modal
+        document.addEventListener('DOMContentLoaded', () => {
+            // AWS config modal events
+            document.getElementById('close-aws-modal').addEventListener('click', hideAwsConfigModal);
+            document.getElementById('cancel-aws-config').addEventListener('click', hideAwsConfigModal);
+            document.getElementById('test-aws-connection').addEventListener('click', testAwsConnection);
+            document.getElementById('update-display-name-only').addEventListener('click', updateDisplayNameOnly);
+            document.getElementById('aws-config-form').addEventListener('submit', submitAwsConfig);
+            
+            // Resources modal events
+            document.getElementById('close-resources-modal').addEventListener('click', hideResourcesModal);
+            document.getElementById('close-resources-btn').addEventListener('click', hideResourcesModal);
+            
+            // Discovery logs modal events
+            document.getElementById('close-logs-modal').addEventListener('click', hideDiscoveryLogsModal);
+            document.getElementById('close-logs-btn').addEventListener('click', hideDiscoveryLogsModal);
+            document.getElementById('refresh-logs-btn').addEventListener('click', refreshDiscoveryLogs);
+            
+            // Close resources modal when clicking outside
+            const resourcesModal = document.getElementById('resources-modal');
+            window.addEventListener('click', (event) => {
+                if (event.target === resourcesModal) {
+                    hideResourcesModal();
+                }
+            });
+            
+            // Close logs modal when clicking outside
+            const logsModal = document.getElementById('discovery-logs-modal');
+            window.addEventListener('click', (event) => {
+                if (event.target === logsModal) {
+                    hideDiscoveryLogsModal();
+                }
+            });
+            
+            // Add AWS provider button
+            document.getElementById('add-aws-provider').addEventListener('click', showNewAwsProviderModal);
+            
+            // Close modal when clicking outside
+            const awsModal = document.getElementById('aws-config-modal');
+            window.addEventListener('click', (event) => {
+                if (event.target === awsModal) {
+                    hideAwsConfigModal();
+                }
+            });
+        });
+        
+        // Show provider resources modal
+        async function showProviderResources(providerId) {
+            console.log(`Showing resources for provider: ${providerId}`);
+            
+            // Set modal title
+            document.getElementById('resources-title').textContent = `Cloud Resources for Provider: ${providerId}`;
+            
+            // Show loading state
+            document.getElementById('resources-loading').style.display = 'block';
+            document.getElementById('resources-content').style.display = 'none';
+            
+            // Show the modal
+            document.getElementById('resources-modal').style.display = 'block';
+            
+            try {
+                // Fetch provider details to get display name
+                const providerData = await fetchData(`${API_URL.providers}/${providerId}`);
+                if (providerData && !providerData.error) {
+                    document.getElementById('resources-title').textContent = `Cloud Resources for: ${providerData.name || providerId}`;
+                }
+                
+                // Fetch resources for this provider
+                const resources = await fetchData(API_URL.providerResources(providerId));
+                
+                if (resources.error) {
+                    document.getElementById('resources-summary').innerHTML = `
+                        <div class="error">Error loading resources: ${resources.error}</div>
+                    `;
+                    document.getElementById('resources-loading').style.display = 'none';
+                    document.getElementById('resources-content').style.display = 'block';
+                    return;
+                }
+                
+                // Group resources by type
+                const resourcesByType = {};
+                if (Array.isArray(resources)) {
+                    resources.forEach(resource => {
+                        const type = resource.type || 'Unknown';
+                        if (!resourcesByType[type]) {
+                            resourcesByType[type] = [];
+                        }
+                        resourcesByType[type].push(resource);
+                    });
+                }
+                
+                // Create summary
+                let summaryHtml = `
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="margin-top: 0;">Resource Summary</h3>
+                        <table style="width: auto;">
+                            <tr>
+                                <td><strong>Total Resources:</strong></td>
+                                <td>${Array.isArray(resources) ? resources.length : 0}</td>
+                            </tr>
+                `;
+                
+                // Add counts by resource type
+                Object.keys(resourcesByType).forEach(type => {
+                    summaryHtml += `
+                        <tr>
+                            <td><strong>${type}:</strong></td>
+                            <td>${resourcesByType[type].length}</td>
+                        </tr>
+                    `;
+                });
+                
+                summaryHtml += `
+                        </table>
+                    </div>
+                `;
+                
+                document.getElementById('resources-summary').innerHTML = summaryHtml;
+                
+                // Populate resources table
+                const tbody = document.getElementById('resources-tbody');
+                tbody.innerHTML = '';
+                
+                if (!Array.isArray(resources) || resources.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" style="text-align: center;">No resources found for this provider</td>
+                        </tr>
+                    `;
+                } else {
+                    resources.forEach(resource => {
+                        const tr = document.createElement('tr');
+                        
+                        // Format metadata for display
+                        let metadataHtml = '';
+                        if (resource.metadata && Object.keys(resource.metadata).length > 0) {
+                            metadataHtml = `<ul style="margin: 0; padding-left: 20px;">`;
+                            Object.entries(resource.metadata).forEach(([key, value]) => {
+                                // Skip empty values
+                                if (value !== null && value !== undefined && value !== '') {
+                                    metadataHtml += `<li><strong>${key}:</strong> ${value}</li>`;
+                                }
+                            });
+                            metadataHtml += `</ul>`;
+                        }
+                        
+                        // Determine resource status class based on EC2 instance state
+                        let statusClass = '';
+                        let displayStatus = resource.status || 'Unknown';
+                        
+                        // Apply specific styling for EC2 instance states
+                        if (resource.type === 'EC2') {
+                            switch (displayStatus.toLowerCase()) {
+                                case 'running':
+                                    statusClass = 'status-ok';
+                                    break;
+                                case 'pending':
+                                case 'stopping':
+                                    statusClass = 'status-warning';
+                                    break;
+                                case 'stopped':
+                                case 'shutting-down':
+                                case 'terminated':
+                                    statusClass = 'status-error';
+                                    break;
+                                default:
+                                    statusClass = '';
+                            }
+                            
+                            // Capitalize first letter of status for display
+                            displayStatus = displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1).toLowerCase();
+                        }
+                        
+                        // Create row content
+                        tr.innerHTML = `
+                            <td>${resource.id || 'N/A'}</td>
+                            <td>${resource.name || 'Unnamed'}</td>
+                            <td>${resource.type || 'Unknown'}</td>
+                            <td>${statusClass ? `<span class="status-indicator ${statusClass}"></span> ` : ''}${displayStatus}</td>
+                            <td>${resource.region || 'N/A'}</td>
+                            <td>${metadataHtml || 'No metadata available'}</td>
+                        `;
+                        
+                        tbody.appendChild(tr);
+                    });
+                }
+                
+                // Hide loading, show content
+                document.getElementById('resources-loading').style.display = 'none';
+                document.getElementById('resources-content').style.display = 'block';
+                
+            } catch (error) {
+                console.error('Error loading provider resources:', error);
+                document.getElementById('resources-summary').innerHTML = `
+                    <div class="error">Error loading resources: ${error.message}</div>
+                `;
+                document.getElementById('resources-loading').style.display = 'none';
+                document.getElementById('resources-content').style.display = 'block';
+            }
+        }
+        
+        // Hide resources modal
+        function hideResourcesModal() {
+            document.getElementById('resources-modal').style.display = 'none';
+        }
+        
+        // Current provider ID for discovery logs
+        let currentLogsProviderId = null;
+        
+        // Function to show the discovery logs modal
+        async function viewDiscoveryLogs(providerId) {
+            console.log(`Showing discovery logs for provider: ${providerId}`);
+            currentLogsProviderId = providerId;
+            
+            // Set modal title
+            document.getElementById('logs-title').textContent = `Discovery Logs for Provider: ${providerId}`;
+            
+            // Show loading state
+            document.getElementById('logs-loading').style.display = 'block';
+            document.getElementById('logs-content').style.display = 'none';
+            
+            // Show the modal
+            document.getElementById('discovery-logs-modal').style.display = 'block';
+            
+            // Load the logs
+            await loadDiscoveryLogs(providerId);
+        }
+        
+        // Function to load discovery logs
+        async function loadDiscoveryLogs(providerId) {
+            try {
+                // Fetch provider details to get display name
+                const providerData = await fetchData(`${API_URL.providers}/${providerId}`);
+                if (providerData && !providerData.error) {
+                    document.getElementById('logs-title').textContent = `Discovery Logs for: ${providerData.name || providerId}`;
+                }
+                
+                // Fetch logs for this provider
+                const logsData = await fetchData(API_URL.discoveryLogs(providerId));
+                
+                if (logsData.error) {
+                    document.getElementById('logs-summary').innerHTML = `
+                        <div class="error">Error loading logs: ${logsData.error}</div>
+                    `;
+                    document.getElementById('logs-loading').style.display = 'none';
+                    document.getElementById('logs-content').style.display = 'block';
+                    return;
+                }
+                
+                // Create summary
+                let summaryHtml = `
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="margin-top: 0;">Log Summary</h3>
+                        <p>Provider: <strong>${providerId}</strong></p>
+                        <p>Total Logs: <strong>${logsData.count || 0}</strong></p>
+                    </div>
+                `;
+                
+                document.getElementById('logs-summary').innerHTML = summaryHtml;
+                
+                // Populate logs table
+                const tbody = document.getElementById('logs-tbody');
+                tbody.innerHTML = '';
+                
+                if (!logsData.logs || logsData.logs.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" style="text-align: center;">No logs found for this provider</td>
+                        </tr>
+                    `;
+                } else {
+                    // Sort logs by timestamp (newest first)
+                    logsData.logs.sort((a, b) => {
+                        const timeA = a.timestamp ? new Date(a.timestamp) : new Date(0);
+                        const timeB = b.timestamp ? new Date(b.timestamp) : new Date(0);
+                        return timeB - timeA;
+                    });
+                    
+                    logsData.logs.forEach(log => {
+                        const tr = document.createElement('tr');
+                        
+                        // Determine log level styling
+                        let levelClass = '';
+                        if (log.level === 'ERROR' || log.level === 'FATAL') {
+                            levelClass = 'style="color: #cc0000; font-weight: bold;"';
+                        } else if (log.level === 'WARN' || log.level === 'WARNING') {
+                            levelClass = 'style="color: #f57900; font-weight: bold;"';
+                        } else if (log.level === 'INFO') {
+                            levelClass = 'style="color: #3465a4;"';
+                        } else if (log.level === 'DEBUG') {
+                            levelClass = 'style="color: #555;"';
+                        }
+                        
+                        // Format timestamp
+                        const timestamp = log.timestamp ? formatDate(log.timestamp) : 'N/A';
+                        
+                        // Create row content
+                        tr.innerHTML = `
+                            <td>${timestamp}</td>
+                            <td ${levelClass}>${log.level || 'INFO'}</td>
+                            <td>${log.component || 'Discovery'}</td>
+                            <td style="word-break: break-word;">${log.message || ''}</td>
+                        `;
+                        
+                        tbody.appendChild(tr);
+                    });
+                }
+                
+                // Hide loading, show content
+                document.getElementById('logs-loading').style.display = 'none';
+                document.getElementById('logs-content').style.display = 'block';
+                
+            } catch (error) {
+                console.error('Error loading discovery logs:', error);
+                document.getElementById('logs-summary').innerHTML = `
+                    <div class="error">Error loading logs: ${error.message}</div>
+                `;
+                document.getElementById('logs-loading').style.display = 'none';
+                document.getElementById('logs-content').style.display = 'block';
+            }
+        }
+        
+        // Function to refresh discovery logs
+        function refreshDiscoveryLogs() {
+            if (currentLogsProviderId) {
+                loadDiscoveryLogs(currentLogsProviderId);
+            }
+        }
+        
+        // Function to hide the discovery logs modal
+        function hideDiscoveryLogsModal() {
+            document.getElementById('discovery-logs-modal').style.display = 'none';
+        }
+
+        // Delete a cloud provider
+        async function deleteProvider(providerId) {
+            console.log(`Deleting provider: ${providerId}`);
+            
+            // Confirm deletion
+            if (!confirm(`Are you sure you want to delete the provider '${providerId}'? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                // Get the provider details first for a better confirmation message
+                const providerData = await fetchData(`${API_URL.providers}/${providerId}`);
+                const displayName = providerData && !providerData.error ? providerData.name : providerId;
+                
+                // Second confirmation with provider name
+                if (!confirm(`Please confirm deletion of provider: ${displayName}\nThis will remove all configurations and cannot be undone.`)) {
+                    return;
+                }
+                
+                // Make the DELETE request
+                const response = await fetch(API_URL.deleteProvider(providerId), {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    // Show success message
+                    alert(`Provider '${displayName}' has been successfully deleted.`);
+                    
+                    // Refresh the providers list
+                    loadProviders();
+                    // Also refresh the dashboard to update provider counts
+                    loadDashboardSummary();
+                } else {
+                    // Show error message
+                    const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+                    alert(`Failed to delete provider: ${errorData.error || response.statusText}`);
+                }
+            } catch (error) {
+                console.error('Error deleting provider:', error);
+                alert(`Error deleting provider: ${error.message}`);
+            }
+        }
+        
+        // Function to show the AWS provider configuration modal for a new provider
+        function showNewAwsProviderModal() {
+            // Clear the current provider ID
+            currentProviderId = null;
+            
+            // Generate a default provider ID
+            const defaultProviderId = 'aws-' + Math.random().toString(36).substring(2, 10);
+            document.getElementById('aws-provider-id').value = defaultProviderId;
+            document.getElementById('aws-display-name').value = 'AWS Cloud Provider';
+            
+            // Clear sensitive fields
+            document.getElementById('aws-access-key').value = '';
+            document.getElementById('aws-secret-key').value = '';
+            document.getElementById('aws-role-arn').value = '';
+            
+            // Set default values for regions
+            document.getElementById('aws-regions').value = 'us-east-1';
+            
+            // Set default EC2 discovery settings
+            document.getElementById('aws-ec2-enabled').checked = true;
+            
+            // Select all instance states to avoid filtering out systems
+            const instanceStatesSelect = document.getElementById('aws-instance-states');
+            for (let i = 0; i < instanceStatesSelect.options.length; i++) {
+                instanceStatesSelect.options[i].selected = true;
+            }
+            
+            // Set default tags to include but don't filter by tags
+            document.getElementById('aws-include-tags').value = 'Name, Environment, Service';
+            document.getElementById('aws-filter-tags').value = '';
+            
+            // Set default CloudWatch settings
+            document.getElementById('aws-cloudwatch-enabled').checked = true;
+            const metricsSelect = document.getElementById('aws-metrics');
+            for (let i = 0; i < metricsSelect.options.length; i++) {
+                const option = metricsSelect.options[i];
+                option.selected = ['CPUUtilization', 'NetworkIn', 'NetworkOut', 'DiskReadBytes', 'DiskWriteBytes', 'StatusCheckFailed'].includes(option.value);
+            }
+            
+            const statisticsSelect = document.getElementById('aws-statistics');
+            for (let i = 0; i < statisticsSelect.options.length; i++) {
+                const option = statisticsSelect.options[i];
+                option.selected = ['Average', 'Maximum', 'Minimum'].includes(option.value);
+            }
+            
+            const periodSelect = document.getElementById('aws-period');
+            for (let i = 0; i < periodSelect.options.length; i++) {
+                if (periodSelect.options[i].value === '5') {
+                    periodSelect.selectedIndex = i;
+                    break;
+                }
+            }
+            
+            // Show a message that this is a new provider
+            const messagesDiv = document.getElementById('aws-config-messages');
+            messagesDiv.innerHTML = `
+                <div class="alert" style="background-color: #d4edda; color: #155724; padding: 10px; border-radius: 4px;">
+                    <strong>Creating a new AWS provider.</strong> Fill in the required information and click "Save Changes".
+                </div>
+            `;
+            
+            // Show the modal
+            document.getElementById('aws-config-modal').style.display = 'block';
+        }
     </script>
 </body>
 </html>

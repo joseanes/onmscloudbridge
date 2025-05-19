@@ -2,6 +2,7 @@ package org.opennms.bridge.webapp.controller;
 
 import org.opennms.bridge.api.CloudProvider;
 import org.opennms.bridge.api.CloudResource;
+import org.opennms.bridge.api.DiscoveryLogService;
 import org.opennms.bridge.api.DiscoveryService;
 import org.opennms.bridge.webapp.service.MockDiscoveryService;
 import org.slf4j.Logger;
@@ -33,6 +34,9 @@ public class DiscoveryController {
     
     @Autowired
     private List<CloudProvider> cloudProviders;
+    
+    @Autowired
+    private DiscoveryLogService discoveryLogService;
     
     // In-memory job tracking (would be persisted in a real implementation)
     private final Map<String, DiscoveryJob> discoveryJobs = new ConcurrentHashMap<>();
@@ -87,6 +91,13 @@ public class DiscoveryController {
         response.put("message", "Discovery job started");
         response.put("startTime", Instant.now());
         
+        // Add links to logs and job status for easier tracking
+        Map<String, String> links = new HashMap<>();
+        links.put("status", "/bridge/api/discovery/jobs/" + jobId);
+        links.put("logs", "/bridge/api/discovery/logs/" + providerId);
+        links.put("resources", "/bridge/api/discovery/resources/" + providerId);
+        response.put("_links", links);
+        
         return ResponseEntity.ok(response);
     }
     
@@ -116,6 +127,12 @@ public class DiscoveryController {
             response.put("resourceCount", job.getResourceCount());
         }
         
+        // Add links to logs and resources
+        Map<String, String> links = new HashMap<>();
+        links.put("logs", "/bridge/api/discovery/logs/" + job.getProviderId());
+        links.put("resources", "/bridge/api/discovery/resources/" + job.getProviderId());
+        response.put("_links", links);
+        
         // Include resource summary if resources are available
         if (job.getResources() != null && !job.getResources().isEmpty()) {
             List<Map<String, Object>> resourceSummaries = job.getResources().stream()
@@ -133,6 +150,72 @@ public class DiscoveryController {
         }
         
         return ResponseEntity.ok(response);
+    }
+    
+    /**
+     * Get discovery logs for a provider.
+     */
+    @GetMapping("/logs/{providerId}")
+    public ResponseEntity<Map<String, Object>> getDiscoveryLogs(@PathVariable String providerId) {
+        LOG.debug("Getting discovery logs for provider: {}", providerId);
+        
+        if (discoveryLogService == null) {
+            return ResponseEntity.ok(Map.of(
+                "message", "Discovery logs not available - log service not configured",
+                "providerId", providerId,
+                "logs", Collections.emptyList()
+            ));
+        }
+        
+        try {
+            List<Map<String, Object>> logs = discoveryLogService.getProviderLogs(providerId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("providerId", providerId);
+            response.put("logs", logs != null ? logs : Collections.emptyList());
+            response.put("count", logs != null ? logs.size() : 0);
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            LOG.error("Error getting discovery logs: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of(
+                "error", "Failed to get discovery logs: " + e.getMessage(),
+                "providerId", providerId
+            ));
+        }
+    }
+    
+    /**
+     * Get discovered resources for a provider.
+     */
+    @GetMapping("/resources/{providerId}")
+    public ResponseEntity<Map<String, Object>> getDiscoveredResources(@PathVariable String providerId) {
+        LOG.debug("Getting discovered resources for provider: {}", providerId);
+        
+        if (discoveryLogService == null) {
+            return ResponseEntity.ok(Map.of(
+                "message", "Discovered resources not available - log service not configured",
+                "providerId", providerId,
+                "resources", Collections.emptyList()
+            ));
+        }
+        
+        try {
+            List<Map<String, Object>> resources = discoveryLogService.getDiscoveredResources(providerId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("providerId", providerId);
+            response.put("resources", resources != null ? resources : Collections.emptyList());
+            response.put("count", resources != null ? resources.size() : 0);
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            LOG.error("Error getting discovered resources: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of(
+                "error", "Failed to get discovered resources: " + e.getMessage(),
+                "providerId", providerId
+            ));
+        }
     }
     
     @GetMapping("/jobs")
