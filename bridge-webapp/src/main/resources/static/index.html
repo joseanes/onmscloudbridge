@@ -150,14 +150,6 @@
         </div>
 
         <div class="card">
-            <h2>OpenNMS Connection</h2>
-            <button id="refresh-opennms" class="refresh-button">↻ Refresh</button>
-            <div id="opennms-connection">
-                <div class="loading">Loading OpenNMS connection data...</div>
-            </div>
-        </div>
-
-        <div class="card">
             <h2>Cloud Providers</h2>
             <button id="refresh-providers" class="refresh-button">↻ Refresh</button>
             <div style="margin-bottom: 15px;">
@@ -182,6 +174,17 @@
             <div id="collection-table">
                 <div class="loading">Loading collection status...</div>
             </div>
+            <div id="collection-logs-container" class="logs-container mt-3">
+                <!-- Collection logs will be displayed here -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>OpenNMS Connection</h2>
+            <button id="refresh-opennms" class="refresh-button">↻ Refresh</button>
+            <div id="opennms-connection">
+                <div class="loading">Loading OpenNMS connection data...</div>
+            </div>
         </div>
     </div>
 
@@ -195,7 +198,7 @@
                 <div style="margin-bottom: 15px;">
                     <label for="opennms-url" style="display: block; margin-bottom: 5px; font-weight: bold;">OpenNMS URL:</label>
                     <input type="text" id="opennms-url" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
-                           placeholder="http://localhost:8980/opennms">
+                           placeholder="http://localhost:8980">
                     <small style="color: #777;">The base URL of your OpenNMS installation</small>
                 </div>
 
@@ -452,7 +455,8 @@
             startCollection: (provider) => `/bridge/api/collection/start?providerId=${provider}`,
             providerResources: (provider) => `/bridge/api/cloud-providers/${provider}/resources`,
             deleteProvider: (id) => `/bridge/api/cloud-providers/${id}`,
-            discoveryLogs: (provider) => `/bridge/api/discovery/logs/${provider}`
+            discoveryLogs: (provider) => `/bridge/api/discovery/logs/${provider}`,
+            collectionLogs: (provider) => `/bridge/api/collection/logs/${provider}`
         };
 
         // Fetch data from API
@@ -509,11 +513,75 @@
                 return;
             }
             
+            // Create sections for requisition and collection transfer status
+            let requisitionStatusHtml = '';
+            if (data.lastRequisitionUpdate) {
+                const requisition = data.lastRequisitionUpdate;
+                const statusClass = requisition.success ? 'status-ok' : 'status-error';
+                const statusText = requisition.success ? 'Success' : 'Failed';
+                
+                requisitionStatusHtml = `
+                    <div style="margin-top: 20px;">
+                        <h3>Last OpenNMS Requisition Update</h3>
+                        <table>
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td><span class="status-indicator ${statusClass}"></span> ${statusText}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Timestamp:</strong></td>
+                                <td>${formatDate(requisition.timestamp)}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Foreign Source:</strong></td>
+                                <td>${requisition.foreignSource || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Nodes Provisioned:</strong></td>
+                                <td>${requisition.nodeCount || 0}</td>
+                            </tr>
+                        </table>
+                    </div>
+                `;
+            }
+            
+            let collectionTransferHtml = '';
+            if (data.lastCollectionTransfer) {
+                const collection = data.lastCollectionTransfer;
+                const statusClass = collection.success ? 'status-ok' : 'status-error';
+                const statusText = collection.success ? 'Success' : 'Failed';
+                
+                collectionTransferHtml = `
+                    <div style="margin-top: 20px;">
+                        <h3>Last Metrics Collection Transfer</h3>
+                        <table>
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td><span class="status-indicator ${statusClass}"></span> ${statusText}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Timestamp:</strong></td>
+                                <td>${formatDate(collection.timestamp)}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Metrics Transferred:</strong></td>
+                                <td>${collection.metricCount || 0}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Resources Monitored:</strong></td>
+                                <td>${collection.resourceCount || 0}</td>
+                            </tr>
+                        </table>
+                    </div>
+                `;
+            }
+            
             let html = `
                 <div>
                     <span class="status-indicator status-ok"></span> Service Status: Running
                 </div>
                 <div style="margin-top: 20px;">
+                    <h3>Cloud Infrastructure Summary</h3>
                     <table>
                         <tr>
                             <td><strong>Cloud Providers:</strong></td>
@@ -537,6 +605,8 @@
                         </tr>
                     </table>
                 </div>
+                ${requisitionStatusHtml}
+                ${collectionTransferHtml}
             `;
             
             dashboardElement.innerHTML = html;
@@ -775,11 +845,20 @@
         }
 
         // Load collection jobs
+        // Get the currently selected provider ID
+        function getCurrentProviderId() {
+            const select = document.getElementById('provider-select');
+            return select ? select.value : 'aws-default';  // Default to aws-default if not found
+        }
+        
         async function loadCollectionJobs() {
             const collectionElement = document.getElementById('collection-table');
             collectionElement.innerHTML = '<div class="loading">Loading collection status...</div>';
             
             const data = await fetchData(API_URL.collection);
+            
+            // Also load collection logs for the current provider
+            const providerId = getCurrentProviderId();
             
             if (data.error) {
                 collectionElement.innerHTML = `<div class="error">Error loading collection status: ${data.error}</div>`;
@@ -895,7 +974,7 @@
                         <td>${job.metricCount || 0}</td>
                         <td style="max-width: 300px; font-size: 0.9em;">${detailsHtml || 'No details available'}</td>
                         <td>
-                            <button class="button" onclick="viewDiscoveryLogs('${job.providerId}')" style="background-color: #3465a4; margin-right: 5px;">View Logs</button>
+                            <button class="button" onclick="viewCollectionLogs('${job.providerId}')" style="background-color: #3465a4; margin-right: 5px;">View Logs</button>
                             <button class="button" onclick="startCollection('${job.providerId}')">Run Again</button>
                         </td>
                     </tr>
@@ -908,6 +987,11 @@
             `;
             
             collectionElement.innerHTML = html;
+            
+            // Load collection logs for the selected provider
+            if (providerId) {
+                loadCollectionLogs(providerId);
+            }
         }
 
         // Start discovery
@@ -1199,7 +1283,13 @@
                     }
                     
                     // Add raw curl command for reference
-                    const curlCommand = `curl -u ${username}:${password} "${url}/rest/"`;
+                    // Construct proper URL for curl command with /opennms/rest/info/
+                    let curUrl = url;
+                    if (!curUrl.endsWith('/')) curUrl += '/';
+                    if (!curUrl.includes('/opennms/')) {
+                        curUrl += 'opennms/';
+                    }
+                    const curlCommand = `curl -u ${username}:${password} "${curUrl}rest/info/"`;
                     
                     resultDiv.innerHTML = `
                         <div class="alert" style="background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px;">
@@ -1354,7 +1444,15 @@
             document.getElementById('refresh-opennms').addEventListener('click', loadOpenNMSConnection);
             document.getElementById('refresh-providers').addEventListener('click', loadProviders);
             document.getElementById('refresh-discovery').addEventListener('click', loadDiscoveryJobs);
-            document.getElementById('refresh-collection').addEventListener('click', loadCollectionJobs);
+            document.getElementById('refresh-collection').addEventListener('click', () => {
+                loadCollectionJobs();
+                
+                // Also load collection logs for the current provider
+                const providerId = getCurrentProviderId();
+                if (providerId) {
+                    loadCollectionLogs(providerId);
+                }
+            });
             
             // Auto-refresh providers table every 30 seconds
             setInterval(() => {
@@ -2269,6 +2367,66 @@
             // Show the modal
             document.getElementById('aws-config-modal').style.display = 'block';
         }
+
+        // Toggle OpenNMS connection
+        async function toggleOpenNMSConnection() {
+            const openNMSElement = document.getElementById('opennms-connection');
+            const toggleButton = document.getElementById('opennms-toggle-btn');
+            const oldContent = openNMSElement.innerHTML;
+            
+            // Get current connection status
+            const connectionData = await fetchData(API_URL.opennms);
+            const isCurrentlyConnected = connectionData.connectionStatus;
+            
+            if (isCurrentlyConnected) {
+                // Disconnect
+                openNMSElement.innerHTML = '<div class="loading">Disconnecting from OpenNMS...</div>';
+                toggleButton.disabled = true;
+                
+                try {
+                    const result = await fetch('/bridge/api/opennms/disconnect', {
+                        method: 'POST'
+                    });
+                    
+                    if (result.ok) {
+                        toggleButton.textContent = 'Connect';
+                        loadOpenNMSConnection();
+                    } else {
+                        throw new Error('Failed to disconnect from OpenNMS');
+                    }
+                } catch (error) {
+                    openNMSElement.innerHTML = oldContent;
+                    alert('Error disconnecting from OpenNMS: ' + error.message);
+                } finally {
+                    toggleButton.disabled = false;
+                }
+            } else {
+                // Connect
+                openNMSElement.innerHTML = '<div class="loading">Connecting to OpenNMS...</div>';
+                toggleButton.disabled = true;
+                
+                try {
+                    const result = await fetchData(API_URL.opennmsTest);
+                    
+                    if (result.success) {
+                        toggleButton.textContent = 'Disconnect';
+                        loadOpenNMSConnection();
+                    } else {
+                        let errorMessage = result.message || 'Connection failed';
+                        if (result.detailMessage) {
+                            errorMessage += '\n\n' + result.detailMessage;
+                        }
+                        throw new Error(errorMessage);
+                    }
+                } catch (error) {
+                    openNMSElement.innerHTML = oldContent;
+                    alert('Error connecting to OpenNMS: ' + error.message);
+                } finally {
+                    toggleButton.disabled = false;
+                }
+            }
+        }
     </script>
+    <script src="collection-logs.js"></script>
 </body>
 </html>

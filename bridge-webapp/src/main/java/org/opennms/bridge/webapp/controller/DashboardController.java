@@ -147,6 +147,26 @@ public class DashboardController {
                 }
             }
             
+            // Get last requisition update info
+            Map<String, Object> lastRequisitionUpdate = new HashMap<>();
+            lastRequisitionUpdate.put("timestamp", lastDiscoveryTimestamp);
+            // Default to success if we have a timestamp, otherwise false
+            boolean requisitionSuccess = lastDiscoveryTimestamp != null;
+            lastRequisitionUpdate.put("success", requisitionSuccess);
+            // Add some sample details - in a real app this would come from OpenNMS
+            lastRequisitionUpdate.put("nodeCount", requisitionSuccess ? discoveredResources : 0);
+            lastRequisitionUpdate.put("foreignSource", "cloud-aws-default");
+            
+            // Get last collection data transfer info
+            Map<String, Object> lastCollectionTransfer = new HashMap<>();
+            lastCollectionTransfer.put("timestamp", lastCollectionTimestamp);
+            // Default to success if we have a timestamp, otherwise false
+            boolean collectionSuccess = lastCollectionTimestamp != null;
+            lastCollectionTransfer.put("success", collectionSuccess);
+            // Add some sample details - in a real app this would come from OpenNMS
+            lastCollectionTransfer.put("metricCount", collectionSuccess ? 54 : 0);
+            lastCollectionTransfer.put("resourceCount", collectionSuccess ? discoveredResources : 0);
+            
             // Create summary data
             Map<String, Object> summaryData = new HashMap<>();
             summaryData.put("totalCloudProviders", providerCount);
@@ -157,6 +177,8 @@ public class DashboardController {
             summaryData.put("discoveredResources", discoveredResources);
             summaryData.put("lastCollectionTimestamp", lastCollectionTimestamp);
             summaryData.put("lastDiscoveryTimestamp", lastDiscoveryTimestamp);
+            summaryData.put("lastRequisitionUpdate", lastRequisitionUpdate);
+            summaryData.put("lastCollectionTransfer", lastCollectionTransfer);
             summaryData.put("providers", providerSummaries);
             
             return ResponseEntity.ok(summaryData);
