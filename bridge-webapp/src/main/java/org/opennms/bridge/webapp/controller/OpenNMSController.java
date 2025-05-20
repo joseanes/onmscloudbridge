@@ -1,5 +1,9 @@
 package org.opennms.bridge.webapp.controller;
 
+import org.opennms.bridge.api.CloudProvider;
+import org.opennms.bridge.api.CloudResource;
+import org.opennms.bridge.api.DiscoveredNode;
+import org.opennms.bridge.api.MetricCollection;
 import org.opennms.bridge.core.service.OpenNMSClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,23 +12,37 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
-
+import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * REST controller for managing OpenNMS connection settings and status.
  */
 @RestController
-@RequestMapping("/api/opennms")
-public class OpenNMSController {
+@RequestMapping("/opennms")
+public class OpenNMSController {    
+    // In-memory tracking for transfer jobs
+    private final Map<String, TransferJob> transferJobs = new ConcurrentHashMap<>();
+    
+    @Autowired
+    private List<CloudProvider> cloudProviders;
+    
     private static final Logger LOG = LoggerFactory.getLogger(OpenNMSController.class);
 
     @Autowired
@@ -269,5 +287,413 @@ public class OpenNMSController {
         }
         
         return ResponseEntity.ok(status);
+    }
+    
+    /**
+     * Create or update a node in OpenNMS
+     * 
+     * @param request the node creation request containing resource details
+     * @return the response with job ID
+     */
+    @PostMapping("/nodes")
+    public ResponseEntity<Map<String, Object>> createOrUpdateNode(@RequestBody Map<String, Object> request) {
+        LOG.info("Creating/updating node in OpenNMS: {}", request);
+        
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            // Verify connection to OpenNMS
+            if (!openNMSClient.testConnection()) {
+                response.put("success", false);
+                response.put("message", "Not connected to OpenNMS. Please check your connection settings.");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+            }
+            
+            // Extract parameters from request
+            String providerId = (String) request.get("providerId");
+            String resourceId = (String) request.get("resourceId");
+            
+            if (providerId == null || resourceId == null) {
+                response.put("success", false);
+                response.put("message", "Provider ID and resource ID are required.");
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            // Find the provider
+            CloudProvider provider = findProviderById(providerId);
+            if (provider == null) {
+                response.put("success", false);
+                response.put("message", "Provider not found: " + providerId);
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            // Create a transfer job
+            String jobId = UUID.randomUUID().toString();
+            TransferJob job = new TransferJob(jobId, providerId, resourceId, TransferType.NODE);
+            job.setStatus("RUNNING");
+            job.setStartTime(Instant.now());
+            job.setMessage("Creating/updating node in OpenNMS...");
+            transferJobs.put(jobId, job);
+            
+            // Async execution to avoid blocking the request
+            new Thread(() -> {
+                try {
+                    // Fetch the resource details
+                    Set<CloudResource> resources = provider.discover();
+                    CloudResource resource = resources.stream()
+                            .filter(r -> resourceId.equals(r.getResourceId()))
+                            .findFirst()
+                            .orElse(null);
+                    
+                    if (resource == null) {
+                        job.setStatus("FAILED");
+                        job.setEndTime(Instant.now());
+                        job.setMessage("Resource not found: " + resourceId);
+                        LOG.error("Resource not found: {}", resourceId);
+                        return;
+                    }
+                    
+                    // Create/update the node in OpenNMS
+                    openNMSClient.createOrUpdateNode(resource);
+                    
+                    // Update job status
+                    job.setStatus("COMPLETED");
+                    job.setEndTime(Instant.now());
+                    job.setMessage("Node created/updated successfully in OpenNMS");
+                    
+                } catch (Exception e) {
+                    LOG.error("Error creating/updating node in OpenNMS", e);
+                    job.setStatus("FAILED");
+                    job.setEndTime(Instant.now());
+                    job.setMessage("Failed to create/update node: " + e.getMessage());
+                }
+            }).start();
+            
+            // Return job information
+            response.put("success", true);
+            response.put("jobId", jobId);
+            response.put("providerId", providerId);
+            response.put("resourceId", resourceId);
+            response.put("status", "RUNNING");
+            response.put("message", "Node creation/update job started");
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            LOG.error("Error processing node creation/update request", e);
+            response.put("success", false);
+            response.put("message", "Error processing request: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+    
+    /**
+     * Send metrics to OpenNMS
+     * 
+     * @param request the metrics request
+     * @return the response with job ID
+     */
+    @PostMapping("/metrics")
+    public ResponseEntity<Map<String, Object>> sendMetrics(@RequestBody Map<String, Object> request) {
+        LOG.info("Sending metrics to OpenNMS: {}", request);
+        
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            // Verify connection to OpenNMS
+            if (!openNMSClient.testConnection()) {
+                response.put("success", false);
+                response.put("message", "Not connected to OpenNMS. Please check your connection settings.");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+            }
+            
+            // Extract parameters from request
+            String providerId = (String) request.get("providerId");
+            String resourceId = (String) request.get("resourceId");
+            
+            if (providerId == null || resourceId == null) {
+                response.put("success", false);
+                response.put("message", "Provider ID and resource ID are required.");
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            // Find the provider
+            CloudProvider provider = findProviderById(providerId);
+            if (provider == null) {
+                response.put("success", false);
+                response.put("message", "Provider not found: " + providerId);
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            // Create a transfer job
+            String jobId = UUID.randomUUID().toString();
+            TransferJob job = new TransferJob(jobId, providerId, resourceId, TransferType.METRICS);
+            job.setStatus("RUNNING");
+            job.setStartTime(Instant.now());
+            job.setMessage("Collecting and sending metrics to OpenNMS...");
+            transferJobs.put(jobId, job);
+            
+            // Async execution to avoid blocking the request
+            new Thread(() -> {
+                try {
+                    // Discover the resource
+                    Set<CloudResource> resources = provider.discover();
+                    CloudResource resource = resources.stream()
+                            .filter(r -> resourceId.equals(r.getResourceId()))
+                            .findFirst()
+                            .orElse(null);
+                    
+                    if (resource == null) {
+                        job.setStatus("FAILED");
+                        job.setEndTime(Instant.now());
+                        job.setMessage("Resource not found: " + resourceId);
+                        LOG.error("Resource not found: {}", resourceId);
+                        return;
+                    }
+                    
+                    // Collect metrics
+                    MetricCollection metrics = provider.collect(resource);
+                    if (metrics == null || metrics.getMetrics().isEmpty()) {
+                        job.setStatus("FAILED");
+                        job.setEndTime(Instant.now());
+                        job.setMessage("No metrics collected for resource: " + resourceId);
+                        LOG.error("No metrics collected for resource: {}", resourceId);
+                        return;
+                    }
+                    
+                    // Find the node ID in OpenNMS
+                    String foreignId = providerId + ":" + resourceId;
+                    String nodeId = openNMSClient.findNodeByForeignId(providerId, foreignId);
+                    
+                    if (nodeId == null) {
+                        // Node doesn't exist, create it first
+                        openNMSClient.createOrUpdateNode(resource);
+                        // Try to get the node ID again
+                        nodeId = openNMSClient.findNodeByForeignId(providerId, foreignId);
+                        
+                        if (nodeId == null) {
+                            job.setStatus("FAILED");
+                            job.setEndTime(Instant.now());
+                            job.setMessage("Failed to get node ID from OpenNMS. Node creation might have failed.");
+                            LOG.error("Failed to get node ID from OpenNMS for resource: {}", resourceId);
+                            return;
+                        }
+                    }
+                    
+                    // Send metrics to OpenNMS
+                    openNMSClient.submitMetrics(nodeId, metrics);
+                    
+                    // Update job status
+                    job.setStatus("COMPLETED");
+                    job.setEndTime(Instant.now());
+                    job.setMetricCount(metrics.getMetrics().size());
+                    job.setMessage("Metrics sent successfully to OpenNMS");
+                    
+                } catch (Exception e) {
+                    LOG.error("Error sending metrics to OpenNMS", e);
+                    job.setStatus("FAILED");
+                    job.setEndTime(Instant.now());
+                    job.setMessage("Failed to send metrics: " + e.getMessage());
+                }
+            }).start();
+            
+            // Return job information
+            response.put("success", true);
+            response.put("jobId", jobId);
+            response.put("providerId", providerId);
+            response.put("resourceId", resourceId);
+            response.put("status", "RUNNING");
+            response.put("message", "Metrics collection and transfer job started");
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            LOG.error("Error processing metrics request", e);
+            response.put("success", false);
+            response.put("message", "Error processing request: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+    
+    /**
+     * Get the status of a transfer job
+     * 
+     * @param jobId the job ID
+     * @return the job status
+     */
+    @GetMapping("/transfers/{jobId}")
+    public ResponseEntity<Map<String, Object>> getTransferStatus(@PathVariable String jobId) {
+        LOG.debug("Getting transfer job status: {}", jobId);
+        
+        TransferJob job = transferJobs.get(jobId);
+        if (job == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("jobId", job.getJobId());
+        response.put("providerId", job.getProviderId());
+        response.put("resourceId", job.getResourceId());
+        response.put("type", job.getType().toString());
+        response.put("status", job.getStatus());
+        response.put("message", job.getMessage());
+        response.put("startTime", job.getStartTime());
+        
+        if (job.getEndTime() != null) {
+            response.put("endTime", job.getEndTime());
+        }
+        
+        if (job.getMetricCount() > 0) {
+            response.put("metricCount", job.getMetricCount());
+        }
+        
+        return ResponseEntity.ok(response);
+    }
+    
+    /**
+     * Get all transfer jobs
+     * 
+     * @return list of all transfer jobs
+     */
+    @GetMapping("/transfers")
+    public ResponseEntity<Map<String, Object>> getAllTransfers() {
+        LOG.debug("Getting all transfer jobs");
+        
+        List<Map<String, Object>> jobsList = new ArrayList<>();
+        
+        for (TransferJob job : transferJobs.values()) {
+            Map<String, Object> jobData = new HashMap<>();
+            jobData.put("jobId", job.getJobId());
+            jobData.put("providerId", job.getProviderId());
+            jobData.put("resourceId", job.getResourceId());
+            jobData.put("type", job.getType().toString());
+            jobData.put("status", job.getStatus());
+            jobData.put("message", job.getMessage());
+            jobData.put("startTime", job.getStartTime());
+            
+            if (job.getEndTime() != null) {
+                jobData.put("endTime", job.getEndTime());
+            }
+            
+            if (job.getMetricCount() > 0) {
+                jobData.put("metricCount", job.getMetricCount());
+            }
+            
+            jobsList.add(jobData);
+        }
+        
+        // Sort by start time (newest first)
+        jobsList.sort((j1, j2) -> {
+            Instant t1 = (Instant) j1.get("startTime");
+            Instant t2 = (Instant) j2.get("startTime");
+            return t2.compareTo(t1);
+        });
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("jobs", jobsList);
+        response.put("count", jobsList.size());
+        
+        return ResponseEntity.ok(response);
+    }
+    
+    /**
+     * Helper method to find provider by ID
+     * 
+     * @param providerId the provider ID
+     * @return the provider or null if not found
+     */
+    private CloudProvider findProviderById(String providerId) {
+        if (providerId == null) {
+            return null;
+        }
+        
+        return cloudProviders.stream()
+                .filter(p -> providerId.equals(p.getProviderId()))
+                .findFirst()
+                .orElse(null);
+    }
+    
+    /**
+     * Transfer job type
+     */
+    private enum TransferType {
+        NODE,
+        METRICS
+    }
+    
+    /**
+     * Transfer job tracking class
+     */
+    private static class TransferJob {
+        private final String jobId;
+        private final String providerId;
+        private final String resourceId;
+        private final TransferType type;
+        private String status;
+        private String message;
+        private Instant startTime;
+        private Instant endTime;
+        private int metricCount;
+        
+        public TransferJob(String jobId, String providerId, String resourceId, TransferType type) {
+            this.jobId = jobId;
+            this.providerId = providerId;
+            this.resourceId = resourceId;
+            this.type = type;
+        }
+        
+        public String getJobId() {
+            return jobId;
+        }
+        
+        public String getProviderId() {
+            return providerId;
+        }
+        
+        public String getResourceId() {
+            return resourceId;
+        }
+        
+        public TransferType getType() {
+            return type;
+        }
+        
+        public String getStatus() {
+            return status;
+        }
+        
+        public void setStatus(String status) {
+            this.status = status;
+        }
+        
+        public String getMessage() {
+            return message;
+        }
+        
+        public void setMessage(String message) {
+            this.message = message;
+        }
+        
+        public Instant getStartTime() {
+            return startTime;
+        }
+        
+        public void setStartTime(Instant startTime) {
+            this.startTime = startTime;
+        }
+        
+        public Instant getEndTime() {
+            return endTime;
+        }
+        
+        public void setEndTime(Instant endTime) {
+            this.endTime = endTime;
+        }
+        
+        public int getMetricCount() {
+            return metricCount;
+        }
+        
+        public void setMetricCount(int metricCount) {
+            this.metricCount = metricCount;
+        }
     }
 }

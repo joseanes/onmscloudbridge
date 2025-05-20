@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.opennms.bridge.api.DiscoveredNode;
 import org.opennms.bridge.api.MetricCollection;
 import org.opennms.bridge.api.MetricCollection.Metric;
+import org.opennms.bridge.api.CloudResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Client for interacting with the OpenNMS REST API.
@@ -43,25 +46,47 @@ public class OpenNMSClient {
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
     
-    private final String baseUrl;
-    private final String username;
-    private final String password;
+    @Value("${opennms.base-url}")
+    private String baseUrl;
+    
+    @Value("${opennms.username}")
+    private String username;
+    
+    @Value("${opennms.password}")
+    private String password;
+    
+    @Value("${opennms.api.v1.base-path}")
+    private String v1BasePath;
+    
+    @Value("${opennms.api.v2.base-path}")
+    private String v2BasePath;
+    
+    @Value("${opennms.default-location}")
+    private String defaultLocation;
+
+    private boolean isConnected = false;
+    
     private final HttpHeaders authHeaders;
     
     @Autowired
     public OpenNMSClient(
             RestTemplate restTemplate,
             WebClient.Builder webClientBuilder,
-            ObjectMapper objectMapper,
-            @Value("${opennms.base-url}") String baseUrl,
-            @Value("${opennms.username}") String username,
-            @Value("${opennms.password}") String password) {
+            ObjectMapper objectMapper) {
         
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
-        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        this.username = username;
-        this.password = password;
+        
+        // Normalize the baseUrl
+        if (this.baseUrl != null) {
+            if (!this.baseUrl.endsWith("/")) {
+                this.baseUrl = this.baseUrl + "/";
+            }
+            if (!this.baseUrl.contains("/opennms/") && !this.baseUrl.endsWith("/opennms/")) {
+                this.baseUrl = this.baseUrl + "opennms/";
+            }
+            LOG.info("Normalized OpenNMS base URL: {}", this.baseUrl);
+        }
         
         // Setup authentication headers
         this.authHeaders = new HttpHeaders();
@@ -86,19 +111,48 @@ public class OpenNMSClient {
      * @return true if connection is successful
      */
     public boolean testConnection() {
+        return testConnection(this.baseUrl, this.username, this.password);
+    }
+
+    /**
+     * Test connectivity to the OpenNMS server with custom credentials
+     *
+     * @param baseUrl the OpenNMS server URL
+     * @param username the username to use
+     * @param password the password to use
+     * @return true if connection is successful
+     */
+    public boolean testConnection(String baseUrl, String username, String password) {
         try {
+            // Make sure baseUrl has the right format - it should end with / and we must ensure it has /opennms
+            if (!baseUrl.endsWith("/")) {
+                baseUrl = baseUrl + "/";
+            }
+            if (!baseUrl.contains("/opennms/") && !baseUrl.endsWith("/opennms/")) {
+                baseUrl = baseUrl + "opennms/";
+            }
+            LOG.info("Normalized base URL for OpenNMS: {}", baseUrl);
+            
             // Try the REST API endpoint format
-            String url = baseUrl + "/rest/info";
+            // Fixed URL construction to avoid duplicate /opennms in the path
+            String url = baseUrl + "rest/info";
             LOG.info("Testing connection to OpenNMS at URL: {}", url);
             
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
             
-            // Set Basic Auth explicitly
+            // Set Basic Auth explicitly with explicit credentials
+            LOG.debug("Using username: {} for OpenNMS connection test", username);
+            if (username == null || username.trim().isEmpty() || password == null || password.trim().isEmpty()) {
+                LOG.warn("OpenNMS username or password is empty, authentication will likely fail");
+            }
+            
             String auth = username + ":" + password;
             String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
             headers.set(HttpHeaders.AUTHORIZATION, "Basic " + encodedAuth);
+            
+            LOG.debug("Headers for test: {}", headers);
             
             HttpEntity<String> entity = new HttpEntity<>(headers);
             ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
@@ -111,14 +165,24 @@ public class OpenNMSClient {
             
             return false;
         } catch (RestClientException restError) {
-            LOG.info("Couldn't connect to REST API, trying v2 API...");
+            LOG.info("Couldn't connect to REST API, trying v2 API...: {}", restError.getMessage());
             
             try {
                 // Try the v2 API endpoint format as fallback
-                String url = baseUrl + "/api/v2/info";
+                String url = baseUrl + "api/v2/info";
                 LOG.info("Testing connection to OpenNMS at URL: {}", url);
                 
-                HttpEntity<String> entity = new HttpEntity<>(authHeaders);
+                // Create fresh headers for the second attempt
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+                
+                // Set Basic Auth explicitly with explicit credentials
+                String auth = username + ":" + password;
+                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+                headers.set(HttpHeaders.AUTHORIZATION, "Basic " + encodedAuth);
+                
+                HttpEntity<String> entity = new HttpEntity<>(headers);
                 ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
                 boolean success = response.getStatusCode().is2xxSuccessful();
                 
@@ -129,13 +193,17 @@ public class OpenNMSClient {
                 }
                 
                 return success;
-            } catch (RestClientException e) {
+            } catch (Exception e) {
                 if (e instanceof org.springframework.web.client.HttpClientErrorException.NotFound) {
-                    LOG.warn("OpenNMS API endpoint not found at {}. Server may be running but API path is incorrect.", baseUrl);
+                    LOG.warn("OpenNMS API endpoint not found at {}. Please verify the API path is correct. Expected paths: {} or {}", 
+                            baseUrl, v1BasePath + "/info", v2BasePath + "/info");
+                } else if (e instanceof org.springframework.web.client.HttpClientErrorException.Unauthorized) {
+                    LOG.warn("Authentication failed for OpenNMS at {}. Check your username and password.", baseUrl);
                 } else if (e instanceof org.springframework.web.client.ResourceAccessException) {
-                    LOG.warn("Cannot access OpenNMS at {}. Server may not be running.", baseUrl);
+                    LOG.warn("Cannot access OpenNMS at {}. Server may not be running or network issues.", baseUrl);
                 } else {
-                    LOG.error("Failed to connect to OpenNMS at {}", baseUrl, e);
+                    LOG.error("Failed to connect to OpenNMS at {}: {}", baseUrl, e.getMessage());
+                    LOG.debug("Connection error details", e);
                 }
                 return false;
             }
@@ -410,6 +478,123 @@ public class OpenNMSClient {
             // Any response (even error) means the server is there
             LOG.info("URL {} returned an error but is accessible: {}", baseUrl, e.getMessage());
             return true;
+        }
+    }
+
+    public void createOrUpdateNode(CloudResource resource) {
+        try {
+            // First try to get the node by foreign ID
+            String foreignId = resource.getProviderId() + ":" + resource.getResourceId();
+            String url = baseUrl + v1BasePath + "/nodes?foreignId=" + URLEncoder.encode(foreignId, StandardCharsets.UTF_8);
+            
+            ResponseEntity<Map> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                new HttpEntity<>(authHeaders),
+                Map.class
+            );
+            
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                // Node exists, update it
+                Map<String, Object> node = response.getBody();
+                String nodeId = (String) node.get("id");
+                url = baseUrl + v1BasePath + "/nodes/" + nodeId;
+                
+                Map<String, Object> updateData = new HashMap<>();
+                updateData.put("label", resource.getName());
+                updateData.put("location", defaultLocation);
+                updateData.put("foreignId", foreignId);
+                
+                restTemplate.exchange(
+                    url,
+                    HttpMethod.PUT,
+                    new HttpEntity<>(updateData, authHeaders),
+                    Map.class
+                );
+            } else {
+                // Node doesn't exist, create it
+                url = baseUrl + v1BasePath + "/nodes";
+                
+                Map<String, Object> nodeData = new HashMap<>();
+                nodeData.put("label", resource.getName());
+                nodeData.put("location", defaultLocation);
+                nodeData.put("foreignId", foreignId);
+                
+                restTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    new HttpEntity<>(nodeData, authHeaders),
+                    Map.class
+                );
+            }
+        } catch (Exception e) {
+            LOG.error("Error creating/updating node for resource {}: {}", resource.getResourceId(), e.getMessage());
+            throw new RuntimeException("Failed to create/update node in OpenNMS", e);
+        }
+    }
+    
+    public void deleteNode(String providerId, String resourceId) {
+        try {
+            String foreignId = providerId + ":" + resourceId;
+            String url = baseUrl + v1BasePath + "/nodes?foreignId=" + URLEncoder.encode(foreignId, StandardCharsets.UTF_8);
+            
+            ResponseEntity<Map> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                new HttpEntity<>(authHeaders),
+                Map.class
+            );
+            
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                Map<String, Object> node = response.getBody();
+                String nodeId = (String) node.get("id");
+                url = baseUrl + v1BasePath + "/nodes/" + nodeId;
+                
+                restTemplate.exchange(
+                    url,
+                    HttpMethod.DELETE,
+                    new HttpEntity<>(authHeaders),
+                    Void.class
+                );
+            }
+        } catch (Exception e) {
+            LOG.error("Error deleting node for resource {}: {}", resourceId, e.getMessage());
+            throw new RuntimeException("Failed to delete node from OpenNMS", e);
+        }
+    }
+    
+    public void updateNodeMetrics(String providerId, String resourceId, Map<String, Double> metrics) {
+        try {
+            String foreignId = providerId + ":" + resourceId;
+            String url = baseUrl + v1BasePath + "/nodes?foreignId=" + URLEncoder.encode(foreignId, StandardCharsets.UTF_8);
+            
+            ResponseEntity<Map> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                new HttpEntity<>(authHeaders),
+                Map.class
+            );
+            
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                Map<String, Object> node = response.getBody();
+                String nodeId = (String) node.get("id");
+                
+                // Update metrics using the v2 API
+                url = baseUrl + v2BasePath + "/nodes/" + nodeId + "/metrics";
+                
+                Map<String, Object> metricsData = new HashMap<>();
+                metricsData.put("metrics", metrics);
+                
+                restTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    new HttpEntity<>(metricsData, authHeaders),
+                    Map.class
+                );
+            }
+        } catch (Exception e) {
+            LOG.error("Error updating metrics for resource {}: {}", resourceId, e.getMessage());
+            throw new RuntimeException("Failed to update metrics in OpenNMS", e);
         }
     }
 }
