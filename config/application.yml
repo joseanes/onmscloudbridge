@@ -4,6 +4,11 @@ opennms:
   username: admin
   password: admin
   default-location: Default
+  api:
+    v1:
+      base-path: /rest
+    v2:
+      base-path: /api/v2
 
 # Cloud Providers
 cloud-providers:
@@ -27,7 +32,7 @@ scheduler:
 
 # Application
 server:
-  port: 8081
+  port: 8082  # Changed from 8081 to avoid port conflicts
   servlet:
     context-path: /bridge
 

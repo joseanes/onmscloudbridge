@@ -13,6 +13,7 @@ spring:
     default-property-inclusion: non_null
   main:
     allow-circular-references: true
+    allow-bean-definition-overriding: true
   
 # Security configuration
 security:
@@ -62,13 +63,13 @@ bridge:
   # Debug configuration
   debug:
     # Enable debug mode globally
-    enabled: false
+    enabled: true
     # Default debug flags for AWS providers
     aws:
       # Enable extreme debug mode for AWS provider
-      extreme_debug: false
+      extreme_debug: true
       # Enable emergency bypass mode for AWS provider - preserves credentials on update
-      emergency_bypass: false
+      emergency_bypass: true
       # Debug log directory - if specified, writes will go here instead of /tmp
       log_directory: logs
       # Log output options
@@ -81,7 +82,7 @@ bridge:
 cloud:
   # Set to false to use real cloud providers instead of mock implementations
   providers:
-    useMock: false
+    useMock: true
   
   # AWS Cloud Provider Configuration
   aws:
@@ -113,7 +114,7 @@ cloud:
         - Environment
         - Service
       filterByTags:
-        - Environment=Production
+        # No default tag filters
       instanceStates:
         - running
     
@@ -142,3 +143,8 @@ opennms:
   read-timeout: 60s
   max-retries: 3
   default-location: Default
+  api:
+    v1:
+      base-path: /opennms/rest
+    v2:
+      base-path: /opennms/api/v2

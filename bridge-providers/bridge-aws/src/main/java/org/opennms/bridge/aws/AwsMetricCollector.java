@@ -34,6 +34,18 @@ public class AwsMetricCollector {
         LOG.info("Collecting CloudWatch metrics for EC2 instance {}", resource.getResourceId());
         
         try {
+            
+            // Check if CloudWatch collection is disabled
+            if (!config.getCloudWatchCollection().isEnabled()) {
+                LOG.info("CloudWatch metric collection is disabled for provider {}", 
+                        resource.getProviderId() != null ? resource.getProviderId() : "unknown");
+                MetricCollection collection = new MetricCollection(resource.getResourceId());
+                collection.setTimestamp(Instant.now());
+                collection.addTag("providerId", resource.getProviderId() != null ? resource.getProviderId() : "");
+                collection.setMetrics(Collections.emptyList());
+                return collection;
+            }
+            
             // Validate that this is an EC2 instance
             if (!"EC2".equals(resource.getResourceType())) {
                 throw new IllegalArgumentException("Resource is not an EC2 instance: " + resource.getResourceType());
