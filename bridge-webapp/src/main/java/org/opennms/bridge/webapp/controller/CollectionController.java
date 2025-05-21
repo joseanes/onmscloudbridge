@@ -1,14 +1,19 @@
 package org.opennms.bridge.webapp.controller;
 
 import org.opennms.bridge.api.*;
+import org.opennms.bridge.core.service.ProviderSettingsService;
+import org.opennms.bridge.core.service.SchedulerService;
 import org.opennms.bridge.webapp.service.MockCollectionService;
+import org.opennms.bridge.webapp.service.ProviderFilterService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.PostConstruct;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -19,7 +24,7 @@ import java.util.stream.Collectors;
  * REST controller for managing collection operations.
  */
 @RestController
-@RequestMapping("/api/collection")
+@RequestMapping("/collection")
 public class CollectionController {
     private static final Logger LOG = LoggerFactory.getLogger(CollectionController.class);
 
@@ -34,6 +39,15 @@ public class CollectionController {
     
     @Autowired
     private List<CloudProvider> cloudProviders;
+    
+    @Autowired
+    private SchedulerService schedulerService;
+    
+    @Autowired
+    private ProviderSettingsService providerSettingsService;
+    
+    @Autowired
+    private ProviderFilterService providerFilterService;
     
     // In-memory job tracking (would be persisted in a real implementation)
     private final Map<String, CollectionJob> collectionJobs = new ConcurrentHashMap<>();
@@ -58,11 +72,27 @@ public class CollectionController {
             @RequestParam(required = false) String resourceId) {
         LOG.info("Starting collection for provider: {}, resource: {}", providerId, resourceId);
         
-        // Check if provider exists
+        // Normalize the provider ID if needed
+        final String normalizedProviderId = normalizeProviderId(providerId);
+        if (!normalizedProviderId.equals(providerId)) {
+            LOG.info("Normalized provider ID for collection: {} -> {}", providerId, normalizedProviderId);
+            providerId = normalizedProviderId;
+        }
+        
+        // Use the final normalized ID for provider lookup
+        final String finalProviderId = providerId;
         CloudProvider provider = cloudProviders.stream()
-                .filter(p -> p.getProviderId().equals(providerId))
+                .filter(p -> p.getProviderId().equals(finalProviderId))
+                .filter(p -> providerFilterService.shouldIncludeProvider(p))
                 .findFirst()
                 .orElse(null);
+                
+        // If provider wasn't found but should have been included based on ID, log details
+        if (provider == null && providerFilterService.shouldIncludeProvider(finalProviderId)) {
+            LOG.warn("Provider with ID '{}' should be included but wasn't found", finalProviderId);
+        } else if (provider == null && !providerFilterService.shouldIncludeProvider(finalProviderId)) {
+            LOG.info("Provider with ID '{}' was not included because mock providers are disabled", finalProviderId);
+        }
         
         if (provider == null) {
             Map<String, Object> errorResponse = new HashMap<>();
@@ -166,7 +196,15 @@ public class CollectionController {
         LOG.debug("Getting all collection jobs");
         
         // Get jobs from mock service
-        List<Map<String, Object>> jobList = mockCollectionService.getAllCollectionJobs();
+        List<Map<String, Object>> allJobs = mockCollectionService.getAllCollectionJobs();
+        
+        // Filter jobs based on mock provider setting
+        List<Map<String, Object>> jobList = allJobs.stream()
+                .filter(job -> {
+                    String jobProviderId = (String) job.get("providerId");
+                    return providerFilterService.shouldIncludeProvider(jobProviderId);
+                })
+                .collect(Collectors.toList());
         
         // Add in-memory jobs
         jobList.addAll(collectionJobs.values().stream()
@@ -222,6 +260,29 @@ public class CollectionController {
             response.put("nextRun", schedule.get("nextRun"));
             response.put("lastRun", schedule.get("lastRun"));
             
+            // Add provider-specific intervals and next collection times
+            List<Map<String, Object>> providerSchedules = new ArrayList<>();
+            
+            // Filter providers based on mock provider setting
+            List<CloudProvider> filteredProviders = cloudProviders.stream()
+                    .filter(provider -> providerFilterService.shouldIncludeProvider(provider))
+                    .collect(Collectors.toList());
+                    
+            for (CloudProvider provider : filteredProviders) {
+                String providerId = provider.getProviderId();
+                Map<String, Object> providerSchedule = new HashMap<>();
+                providerSchedule.put("providerId", providerId);
+                providerSchedule.put("name", provider.getDisplayName());
+                providerSchedule.put("interval", schedulerService.getProviderCollectionInterval(providerId));
+                
+                // Add next collection time
+                Instant nextCollectionTime = collectionService.getNextCollectionTime(providerId);
+                providerSchedule.put("nextCollectionTime", nextCollectionTime);
+                
+                providerSchedules.add(providerSchedule);
+            }
+            response.put("providerSchedules", providerSchedules);
+            
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             LOG.error("Error getting collection schedule: {}", e.getMessage(), e);
@@ -235,12 +296,19 @@ public class CollectionController {
     @PostMapping("/schedule")
     public ResponseEntity<Map<String, Object>> updateCollectionSchedule(
             @RequestBody Map<String, Object> scheduleConfig) {
-        LOG.info("Updating collection schedule: {}", scheduleConfig);
+        LOG.warn("GLOBAL SCHEDULE UPDATE - Updating collection schedule: {}", scheduleConfig);
         
         try {
             boolean updated = collectionService.updateSchedule(scheduleConfig);
             
             if (updated) {
+                // Wait a moment for persistence
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                
                 Map<String, Object> updatedSchedule = collectionService.getScheduleInfo();
                 
                 Map<String, Object> response = new HashMap<>();
@@ -261,6 +329,139 @@ public class CollectionController {
             Map<String, Object> response = new HashMap<>();
             response.put("status", "ERROR");
             response.put("message", "Failed to update collection schedule: " + e.getMessage());
+            return ResponseEntity.ok(response);
+        }
+    }
+    
+    /**
+     * Update collection schedule for a specific provider
+     * 
+     * @param providerId the provider ID
+     * @param scheduleConfig the schedule configuration with interval in minutes
+     * @return the updated provider schedule
+     */
+    @PostMapping("/providers/{providerId}/schedule")
+    public ResponseEntity<Map<String, Object>> updateProviderSchedule(
+            @PathVariable String providerId,
+            @RequestBody Map<String, Object> scheduleConfig) {
+        LOG.info("Updating collection schedule for provider {}: {}", providerId, scheduleConfig);
+        
+        try {
+            // Normalize the provider ID if needed
+            final String normalizedProviderId = normalizeProviderId(providerId);
+            if (!normalizedProviderId.equals(providerId)) {
+                LOG.info("Normalized provider ID for schedule update: {} -> {}", providerId, normalizedProviderId);
+                providerId = normalizedProviderId;
+            }
+            
+            // Use the final normalized ID for provider lookup
+            final String finalProviderId = providerId;
+            CloudProvider provider = cloudProviders.stream()
+                    .filter(p -> p.getProviderId().equals(finalProviderId))
+                    .filter(p -> providerFilterService.shouldIncludeProvider(p))
+                    .findFirst()
+                    .orElse(null);
+                    
+            // If provider wasn't found but should have been included based on ID, log details
+            if (provider == null && providerFilterService.shouldIncludeProvider(finalProviderId)) {
+                LOG.warn("Provider with ID '{}' should be included but wasn't found", finalProviderId);
+            } else if (provider == null && !providerFilterService.shouldIncludeProvider(finalProviderId)) {
+                LOG.info("Provider with ID '{}' was not included because mock providers are disabled", finalProviderId);
+            }
+            
+            if (provider == null) {
+                LOG.warn("Provider not found: {}", providerId);
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "ERROR");
+                response.put("message", "Provider not found: " + providerId);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            }
+            
+            // Get interval from request
+            if (!scheduleConfig.containsKey("interval")) {
+                LOG.warn("Collection interval is missing in request");
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "ERROR");
+                response.put("message", "Collection interval is required");
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            long interval;
+            Object intervalObj = scheduleConfig.get("interval");
+            LOG.warn("Interval object type: {}, value: {}", 
+                    intervalObj != null ? intervalObj.getClass().getName() : "null", intervalObj);
+            
+            if (intervalObj instanceof Number) {
+                interval = ((Number) intervalObj).longValue();
+                LOG.warn("Parsed interval as number: {}", interval);
+            } else if (intervalObj instanceof String) {
+                interval = Long.parseLong((String) intervalObj);
+                LOG.warn("Parsed interval as string: {}", interval);
+            } else {
+                LOG.warn("Invalid interval format: {}", intervalObj);
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "ERROR");
+                response.put("message", "Invalid interval format");
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            // Validate interval
+            if (interval < 1) {
+                LOG.warn("Invalid interval value (must be >= 1): {}", interval);
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "ERROR");
+                response.put("message", "Interval must be at least 1 minute");
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            LOG.warn("*** UPDATING PROVIDER SCHEDULE: providerId={}, interval={}", providerId, interval);
+            
+            // Update provider schedule
+            boolean updated = false;
+            
+            // For direct update to MockCollectionService if it's the implementation
+            if (collectionService instanceof MockCollectionService) {
+                LOG.warn("Using MockCollectionService direct update for provider {}", providerId);
+                updated = ((MockCollectionService) collectionService).updateProviderInterval(providerId, interval);
+                LOG.warn("MockCollectionService update result: {}", updated);
+            } else {
+                // For real providers, update using scheduler service
+                LOG.warn("Using SchedulerService to update provider interval");
+                updated = schedulerService.updateProviderCollectionInterval(providerId, interval);
+                LOG.warn("SchedulerService update result: {}", updated);
+            }
+            
+            if (updated) {
+                // Build response with updated schedule
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "UPDATED");
+                response.put("message", "Provider collection schedule updated successfully");
+                response.put("providerId", providerId);
+                response.put("interval", interval); // Use the actual value we just set
+                
+                // Add next collection time to the response
+                try {
+                    Instant nextCollectionTime = collectionService.getNextCollectionTime(providerId);
+                    response.put("nextCollectionTime", nextCollectionTime);
+                    LOG.warn("Next collection time for provider {} is {}", providerId, nextCollectionTime);
+                } catch (Exception e) {
+                    LOG.warn("Error getting next collection time: {}", e.getMessage(), e);
+                }
+                
+                return ResponseEntity.ok(response);
+            } else {
+                LOG.warn("Failed to update provider collection schedule");
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "ERROR");
+                response.put("message", "Failed to update provider collection schedule");
+                return ResponseEntity.ok(response);
+            }
+        } catch (Exception e) {
+            LOG.error("Error updating provider collection schedule: {}", e.getMessage(), e);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "ERROR");
+            response.put("message", "Failed to update provider collection schedule: " + e.getMessage());
             return ResponseEntity.ok(response);
         }
     }
@@ -354,5 +555,167 @@ public class CollectionController {
         public void setCollections(List<MetricCollection> collections) {
             this.collections = collections;
         }
+    }
+    
+    /**
+     * Debugging endpoint to check the current state of provider intervals
+     */
+    @GetMapping("/debug/intervals")
+    public ResponseEntity<Map<String, Object>> debugProviderIntervals() {
+        LOG.info("Debugging provider intervals");
+        
+        Map<String, Object> result = new HashMap<>();
+        
+        // Get all intervals from MockCollectionService
+        if (collectionService instanceof MockCollectionService) {
+            try {
+                MockCollectionService mockService = (MockCollectionService) collectionService;
+                java.lang.reflect.Field field = MockCollectionService.class.getDeclaredField("providerIntervals");
+                field.setAccessible(true);
+                
+                @SuppressWarnings("unchecked")
+                Map<String, Duration> intervals = (Map<String, Duration>) field.get(mockService);
+                
+                Map<String, Object> intervalMap = new HashMap<>();
+                for (Map.Entry<String, Duration> entry : intervals.entrySet()) {
+                    intervalMap.put(entry.getKey(), entry.getValue().toMinutes());
+                }
+                
+                result.put("providerIntervals", intervalMap);
+                
+                // Get the normalizeProviderId method to show mapping
+                java.lang.reflect.Method normalizeMethod = MockCollectionService.class.getDeclaredMethod("normalizeProviderId", String.class);
+                normalizeMethod.setAccessible(true);
+                
+                // Show ID mapping for each provider
+                Map<String, String> idMapping = new HashMap<>();
+                for (CloudProvider provider : cloudProviders) {
+                    String originalId = provider.getProviderId();
+                    String normalizedId = (String) normalizeMethod.invoke(mockService, originalId);
+                    
+                    if (!originalId.equals(normalizedId)) {
+                        idMapping.put(originalId, normalizedId);
+                    }
+                }
+                
+                if (!idMapping.isEmpty()) {
+                    result.put("idNormalization", idMapping);
+                }
+            } catch (Exception e) {
+                LOG.error("Error accessing intervals from MockCollectionService: {}", e.getMessage(), e);
+                result.put("error", "Failed to access intervals: " + e.getMessage());
+            }
+        }
+        
+        // Get scheduler service intervals
+        try {
+            java.lang.reflect.Field field = schedulerService.getClass().getDeclaredField("providerCollectionIntervals");
+            field.setAccessible(true);
+            
+            @SuppressWarnings("unchecked")
+            Map<String, Duration> intervals = (Map<String, Duration>) field.get(schedulerService);
+            
+            Map<String, Object> intervalMap = new HashMap<>();
+            for (Map.Entry<String, Duration> entry : intervals.entrySet()) {
+                intervalMap.put(entry.getKey(), entry.getValue().toMinutes());
+            }
+            
+            result.put("schedulerIntervals", intervalMap);
+        } catch (Exception e) {
+            LOG.error("Error accessing intervals from SchedulerService: {}", e.getMessage(), e);
+            result.put("schedulerError", "Failed to access intervals: " + e.getMessage());
+        }
+        
+        // Add provider info
+        List<Map<String, Object>> providers = new ArrayList<>();
+        
+        // Filter providers based on mock provider setting
+        List<CloudProvider> filteredProviders = cloudProviders.stream()
+                .filter(provider -> providerFilterService.shouldIncludeProvider(provider))
+                .collect(Collectors.toList());
+                
+        for (CloudProvider provider : filteredProviders) {
+            Map<String, Object> providerInfo = new HashMap<>();
+            String providerId = provider.getProviderId();
+            
+            providerInfo.put("id", providerId);
+            providerInfo.put("name", provider.getDisplayName());
+            providerInfo.put("type", provider.getProviderType());
+            
+            // Get interval
+            try {
+                long interval = schedulerService.getProviderCollectionInterval(providerId);
+                providerInfo.put("interval", interval);
+            } catch (Exception e) {
+                providerInfo.put("interval", "error: " + e.getMessage());
+            }
+            
+            // Get next collection time
+            try {
+                Instant nextTime = collectionService.getNextCollectionTime(providerId);
+                providerInfo.put("nextCollection", nextTime);
+            } catch (Exception e) {
+                providerInfo.put("nextCollection", "error: " + e.getMessage());
+            }
+            
+            // Get persisted interval
+            try {
+                Long persistedInterval = providerSettingsService.getCollectionInterval(providerId);
+                providerInfo.put("persistedInterval", persistedInterval);
+            } catch (Exception e) {
+                providerInfo.put("persistedInterval", "error: " + e.getMessage());
+            }
+            
+            providers.add(providerInfo);
+        }
+        
+        result.put("providers", providers);
+        
+        // Include the provider settings content
+        try {
+            java.nio.file.Path settingsFile = java.nio.file.Paths.get("config", "provider-settings.properties");
+            if (java.nio.file.Files.exists(settingsFile)) {
+                List<String> lines = java.nio.file.Files.readAllLines(settingsFile);
+                result.put("settingsFile", lines);
+            }
+        } catch (Exception e) {
+            LOG.error("Error reading settings file: {}", e.getMessage(), e);
+            result.put("settingsFileError", "Failed to read settings file: " + e.getMessage());
+        }
+        
+        return ResponseEntity.ok(result);
+    }
+    
+    /**
+     * Normalize provider IDs to prevent duplicates.
+     * This method delegates to the MockCollectionService's normalization logic.
+     * 
+     * @param providerId original provider ID
+     * @return normalized provider ID
+     */
+    private String normalizeProviderId(String providerId) {
+        if (providerId == null) {
+            return "unknown";
+        }
+        
+        if (collectionService instanceof MockCollectionService) {
+            try {
+                MockCollectionService mockService = (MockCollectionService) collectionService;
+                java.lang.reflect.Method normalizeMethod = 
+                        MockCollectionService.class.getDeclaredMethod("normalizeProviderId", String.class);
+                normalizeMethod.setAccessible(true);
+                
+                return (String) normalizeMethod.invoke(mockService, providerId);
+            } catch (Exception e) {
+                LOG.error("Error normalizing provider ID: {}", e.getMessage(), e);
+            }
+        }
+        
+        // If we can't normalize via MockCollectionService, do simple normalization
+        if ("awsCloudProvider".equals(providerId) || "mockAwsCloudProvider".equals(providerId)) {
+            return "aws-mock";
+        }
+        
+        return providerId;
     }
 }

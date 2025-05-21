@@ -5,6 +5,7 @@ import org.opennms.bridge.api.CloudResource;
 import org.opennms.bridge.api.DiscoveryLogService;
 import org.opennms.bridge.api.DiscoveryService;
 import org.opennms.bridge.webapp.service.MockDiscoveryService;
+import org.opennms.bridge.webapp.service.ProviderFilterService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,7 +23,7 @@ import java.util.stream.Collectors;
  * REST controller for managing discovery operations.
  */
 @RestController
-@RequestMapping("/api/discovery")
+@RequestMapping("/discovery")
 public class DiscoveryController {
     private static final Logger LOG = LoggerFactory.getLogger(DiscoveryController.class);
 
@@ -37,6 +38,9 @@ public class DiscoveryController {
     
     @Autowired
     private DiscoveryLogService discoveryLogService;
+    
+    @Autowired
+    private ProviderFilterService providerFilterService;
     
     // In-memory job tracking (would be persisted in a real implementation)
     private final Map<String, DiscoveryJob> discoveryJobs = new ConcurrentHashMap<>();
@@ -157,38 +161,7 @@ public class DiscoveryController {
         return ResponseEntity.ok(response);
     }
     
-    /**
-     * Get discovery logs for a provider.
-     */
-    @GetMapping("/logs/{providerId}")
-    public ResponseEntity<Map<String, Object>> getDiscoveryLogs(@PathVariable String providerId) {
-        LOG.debug("Getting discovery logs for provider: {}", providerId);
-        
-        if (discoveryLogService == null) {
-            return ResponseEntity.ok(Map.of(
-                "message", "Discovery logs not available - log service not configured",
-                "providerId", providerId,
-                "logs", Collections.emptyList()
-            ));
-        }
-        
-        try {
-            List<Map<String, Object>> logs = discoveryLogService.getProviderLogs(providerId);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("providerId", providerId);
-            response.put("logs", logs != null ? logs : Collections.emptyList());
-            response.put("count", logs != null ? logs.size() : 0);
-            
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            LOG.error("Error getting discovery logs: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).body(Map.of(
-                "error", "Failed to get discovery logs: " + e.getMessage(),
-                "providerId", providerId
-            ));
-        }
-    }
+    // Discovery logs endpoint moved to DiscoveryLogController
     
     /**
      * Get discovered resources for a provider.
@@ -228,7 +201,15 @@ public class DiscoveryController {
         LOG.debug("Getting all discovery jobs");
         
         // Get jobs from mock service
-        List<Map<String, Object>> jobList = mockDiscoveryService.getAllDiscoveryJobs();
+        List<Map<String, Object>> allJobs = mockDiscoveryService.getAllDiscoveryJobs();
+        
+        // Filter jobs based on mock provider setting
+        List<Map<String, Object>> jobList = allJobs.stream()
+                .filter(job -> {
+                    String jobProviderId = (String) job.get("providerId");
+                    return providerFilterService.shouldIncludeProvider(jobProviderId);
+                })
+                .collect(Collectors.toList());
         
         // Add in-memory jobs
         jobList.addAll(discoveryJobs.values().stream()

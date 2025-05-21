@@ -83,6 +83,17 @@ cloud:
   # Set to false to use real cloud providers instead of mock implementations
   providers:
     useMock: true
+
+# Integration configuration
+integration:
+  # Default settings for OpenNMS integration
+  discoveryFrequency: 15  # minutes
+  collectionFrequency: 5   # minutes
+  nodeSyncFrequency: 30    # minutes
+  metricsSendFrequency: 10 # minutes
+  enableAutoNodeSync: false
+  enableAutoMetricsSend: false
+  disableMockProviders: false
   
   # AWS Cloud Provider Configuration
   aws:

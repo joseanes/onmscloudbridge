@@ -5,6 +5,7 @@ import org.opennms.bridge.api.CloudProviderException;
 import org.opennms.bridge.api.CloudResource;
 import org.opennms.bridge.api.DiscoveryService;
 import org.opennms.bridge.api.CollectionService;
+import org.opennms.bridge.webapp.service.ProviderFilterService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +24,7 @@ import java.util.stream.Collectors;
  * REST controller for dashboard data and metrics.
  */
 @RestController
-@RequestMapping("/api/dashboard")
+@RequestMapping("/dashboard")
 public class DashboardController {
     private static final Logger LOG = LoggerFactory.getLogger(DashboardController.class);
 
@@ -41,6 +42,9 @@ public class DashboardController {
     
     @Autowired
     private CollectionController collectionController;
+    
+    @Autowired
+    private ProviderFilterService providerFilterService;
 
     @GetMapping("/summary")
     public ResponseEntity<Map<String, Object>> getDashboardSummary() {
@@ -98,7 +102,23 @@ public class DashboardController {
             int discoveredResources = 0;
             List<Map<String, Object>> providerSummaries = new ArrayList<>();
             
-            for (CloudProvider provider : cloudProviders) {
+            // Filter providers based on mock provider setting
+            List<CloudProvider> filteredProviders = cloudProviders.stream()
+                    .filter(provider -> providerFilterService.shouldIncludeProvider(provider))
+                    .collect(Collectors.toList());
+                    
+            // Create summary data map
+            Map<String, Object> summaryData = new HashMap<>();
+            
+            // Check if real providers are enabled but we don't have any
+            if (filteredProviders.isEmpty() && !providerFilterService.isUseMockProviders()) {
+                 // Special message for when we're filtering out mocks but have no real providers
+                summaryData.put("mockProviderDisabled", true);
+                summaryData.put("warningMessage", "Real cloud providers are enabled but no valid providers are configured. "
+                    + "Please configure AWS credentials or enable mock providers.");
+            }
+            
+            for (CloudProvider provider : filteredProviders) {
                 try {
                     // Get resources for this provider
                     Set<CloudResource> resources = discoveryService.discoverResources(provider.getProviderId());
@@ -167,8 +187,7 @@ public class DashboardController {
             lastCollectionTransfer.put("metricCount", collectionSuccess ? 54 : 0);
             lastCollectionTransfer.put("resourceCount", collectionSuccess ? discoveredResources : 0);
             
-            // Create summary data
-            Map<String, Object> summaryData = new HashMap<>();
+            // Add to summary data
             summaryData.put("totalCloudProviders", providerCount);
             summaryData.put("activeProviders", providerSummaries.stream()
                     .filter(p -> "CONNECTED".equals(p.get("status")))
@@ -230,13 +249,16 @@ public class DashboardController {
             List<CloudProvider> targetProviders;
             
             if (providerId != null && !providerId.isEmpty()) {
-                // Filter by provider ID
+                // Filter by provider ID and mock provider setting
                 targetProviders = cloudProviders.stream()
                         .filter(p -> p.getProviderId().equals(providerId))
+                        .filter(p -> providerFilterService.shouldIncludeProvider(p))
                         .collect(Collectors.toList());
             } else {
-                // Use all providers
-                targetProviders = cloudProviders;
+                // Use all filtered providers
+                targetProviders = cloudProviders.stream()
+                        .filter(provider -> providerFilterService.shouldIncludeProvider(provider))
+                        .collect(Collectors.toList());
             }
             
             // Collect metrics from each provider

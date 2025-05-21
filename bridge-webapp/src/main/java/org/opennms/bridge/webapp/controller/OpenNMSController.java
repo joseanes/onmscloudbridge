@@ -5,6 +5,9 @@ import org.opennms.bridge.api.CloudResource;
 import org.opennms.bridge.api.DiscoveredNode;
 import org.opennms.bridge.api.MetricCollection;
 import org.opennms.bridge.core.service.OpenNMSClient;
+import org.opennms.bridge.webapp.config.BeanConfig;
+import org.opennms.bridge.webapp.service.AwsConfigRefresher;
+import org.opennms.bridge.webapp.service.IntegrationConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * REST controller for managing OpenNMS connection settings and status.
+ * Also handles integration configuration for scheduling and automation.
  */
 @RestController
 @RequestMapping("/opennms")
@@ -41,12 +45,21 @@ public class OpenNMSController {
     private final Map<String, TransferJob> transferJobs = new ConcurrentHashMap<>();
     
     @Autowired
+    private IntegrationConfigService integrationConfigService;
+    
+    @Autowired
     private List<CloudProvider> cloudProviders;
     
     private static final Logger LOG = LoggerFactory.getLogger(OpenNMSController.class);
 
     @Autowired
     private OpenNMSClient openNMSClient;
+    
+    @Autowired
+    private BeanConfig beanConfig;
+    
+    @Autowired
+    private AwsConfigRefresher awsConfigRefresher;
     
     @Value("${opennms.base-url}")
     private String baseUrl;
@@ -595,6 +608,88 @@ public class OpenNMSController {
     }
     
     /**
+     * Get the OpenNMS integration configuration
+     * 
+     * @return the integration configuration
+     */
+    @GetMapping("/integration-config")
+    public ResponseEntity<IntegrationConfig> getIntegrationConfig() {
+        LOG.debug("Getting OpenNMS integration configuration");
+        return ResponseEntity.ok(integrationConfigService.getConfig());
+    }
+    
+    /**
+     * Update the OpenNMS integration configuration
+     * 
+     * @param config the new configuration
+     * @return the updated configuration
+     */
+    @PostMapping("/integration-config")
+    public ResponseEntity<Map<String, Object>> updateIntegrationConfig(@RequestBody IntegrationConfig config) {
+        LOG.info("Updating OpenNMS integration configuration: {}", config);
+        
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            // Validate config values
+            if (config.getDiscoveryFrequency() < 1) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Discovery frequency must be at least 1 minute"
+                ));
+            }
+            if (config.getCollectionFrequency() < 1) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Collection frequency must be at least 1 minute"
+                ));
+            }
+            if (config.getNodeSyncFrequency() < 1) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Node sync frequency must be at least 1 minute"
+                ));
+            }
+            if (config.getMetricsSendFrequency() < 1) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Metrics send frequency must be at least 1 minute"
+                ));
+            }
+            
+            // Update configuration in the service (which saves it to disk)
+            integrationConfigService.updateConfig(config);
+            
+            // Update mock providers setting
+            LOG.info("Setting mock providers to: {}", !config.isDisableMockProviders());
+            beanConfig.setUseMockProviders(!config.isDisableMockProviders());
+            
+            // Update emergency bypass to match mock providers setting
+            // When mock providers are disabled, emergency bypass should also be disabled
+            // When mock providers are enabled, emergency bypass should be enabled
+            awsConfigRefresher.refreshEmergencyBypassSetting(config.isDisableMockProviders() == false);
+            awsConfigRefresher.refreshAwsConfiguration();
+            
+            // BeanConfig will automatically update the active providers
+            // This updates the same list that's injected everywhere
+            
+            response.put("success", true);
+            response.put("message", "Integration configuration updated successfully");
+            response.put("config", config);
+            response.put("mockProviderStatus", !config.isDisableMockProviders() ? "enabled" : "disabled");
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            LOG.error("Error updating integration configuration", e);
+            
+            response.put("success", false);
+            response.put("message", "Error updating configuration: " + e.getMessage());
+            
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+    
+    /**
      * Helper method to find provider by ID
      * 
      * @param providerId the provider ID
@@ -617,6 +712,151 @@ public class OpenNMSController {
     private enum TransferType {
         NODE,
         METRICS
+    }
+    
+    /**
+     * Integration Configuration class
+     */
+    public static class IntegrationConfig {
+        private int discoveryFrequency;  // minutes
+        private int collectionFrequency; // minutes
+        private int nodeSyncFrequency;   // minutes
+        private int metricsSendFrequency; // minutes
+        private boolean enableAutoNodeSync;
+        private boolean enableAutoMetricsSend;
+        private boolean disableMockProviders; // Use real providers only when enabled
+        
+        public IntegrationConfig() {
+            // Default constructor
+        }
+        
+        public IntegrationConfig(
+                int discoveryFrequency, 
+                int collectionFrequency, 
+                int nodeSyncFrequency, 
+                int metricsSendFrequency, 
+                boolean enableAutoNodeSync, 
+                boolean enableAutoMetricsSend,
+                boolean disableMockProviders) {
+            this.discoveryFrequency = discoveryFrequency;
+            this.collectionFrequency = collectionFrequency;
+            this.nodeSyncFrequency = nodeSyncFrequency;
+            this.metricsSendFrequency = metricsSendFrequency;
+            this.enableAutoNodeSync = enableAutoNodeSync;
+            this.enableAutoMetricsSend = enableAutoMetricsSend;
+            this.disableMockProviders = disableMockProviders;
+        }
+
+        public int getDiscoveryFrequency() {
+            return discoveryFrequency;
+        }
+
+        public void setDiscoveryFrequency(int discoveryFrequency) {
+            this.discoveryFrequency = discoveryFrequency;
+        }
+
+        public int getCollectionFrequency() {
+            return collectionFrequency;
+        }
+
+        public void setCollectionFrequency(int collectionFrequency) {
+            this.collectionFrequency = collectionFrequency;
+        }
+
+        public int getNodeSyncFrequency() {
+            return nodeSyncFrequency;
+        }
+
+        public void setNodeSyncFrequency(int nodeSyncFrequency) {
+            this.nodeSyncFrequency = nodeSyncFrequency;
+        }
+
+        public int getMetricsSendFrequency() {
+            return metricsSendFrequency;
+        }
+
+        public void setMetricsSendFrequency(int metricsSendFrequency) {
+            this.metricsSendFrequency = metricsSendFrequency;
+        }
+
+        public boolean isEnableAutoNodeSync() {
+            return enableAutoNodeSync;
+        }
+
+        public void setEnableAutoNodeSync(boolean enableAutoNodeSync) {
+            this.enableAutoNodeSync = enableAutoNodeSync;
+        }
+
+        public boolean isEnableAutoMetricsSend() {
+            return enableAutoMetricsSend;
+        }
+
+        public void setEnableAutoMetricsSend(boolean enableAutoMetricsSend) {
+            this.enableAutoMetricsSend = enableAutoMetricsSend;
+        }
+        
+        public boolean isDisableMockProviders() {
+            return disableMockProviders;
+        }
+        
+        public void setDisableMockProviders(boolean disableMockProviders) {
+            this.disableMockProviders = disableMockProviders;
+        }
+    }
+    
+    /**
+     * Get the current mock providers setting
+     * 
+     * @return the mock providers setting
+     */
+    @GetMapping("/mock-providers")
+    public ResponseEntity<Map<String, Object>> getMockProvidersSetting() {
+        LOG.debug("Getting mock providers setting");
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("useMockProviders", beanConfig.getUseMockProviders());
+        return ResponseEntity.ok(result);
+    }
+    
+    /**
+     * Update the mock providers setting
+     * 
+     * @param settings the settings with useMockProviders boolean
+     * @return the updated settings
+     */
+    @PostMapping("/mock-providers")
+    public ResponseEntity<Map<String, Object>> updateMockProvidersSetting(@RequestBody Map<String, Object> settings) {
+        LOG.info("Updating mock providers setting: {}", settings);
+        
+        Map<String, Object> result = new HashMap<>();
+        
+        try {
+            // Check if the setting is provided
+            if (!settings.containsKey("useMockProviders")) {
+                result.put("success", false);
+                result.put("message", "useMockProviders setting is required");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            // Get the setting value
+            boolean useMockProviders = (boolean) settings.get("useMockProviders");
+            
+            // Update the setting
+            boolean updated = beanConfig.setUseMockProviders(useMockProviders);
+            
+            // Prepare response
+            result.put("success", true);
+            result.put("useMockProviders", updated);
+            result.put("message", "Mock providers setting updated successfully to: " + updated);
+            result.put("note", "Application restart required for changes to take effect");
+            
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            LOG.error("Error updating mock providers setting", e);
+            result.put("success", false);
+            result.put("message", "Error updating setting: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
     }
     
     /**
@@ -696,4 +936,5 @@ public class OpenNMSController {
             this.metricCount = metricCount;
         }
     }
+    
 }

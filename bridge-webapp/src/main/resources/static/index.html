@@ -54,6 +54,9 @@
         .status-error {
             background-color: #cc0000;
         }
+        .status-pending {
+            background-color: #3465a4;
+        }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -2832,6 +2835,18 @@
                 resourcesForTransfer = [];
                 
                 for (const provider of providers) {
+                    // Skip mock providers if the setting is enabled
+                    const isMockProvider = 
+                        provider.id.toLowerCase().includes('mock') || 
+                        provider.name.toLowerCase().includes('mock') ||
+                        provider.type === 'MOCK' ||
+                        provider.id === 'aws-mock';
+                        
+                    if (openNMSIntegrationConfig.hideMockProviders && isMockProvider) {
+                        console.log(`Skipping mock provider: ${provider.id} (${provider.name})`);
+                        continue;
+                    }
+                    
                     try {
                         const response = await fetch(`/bridge/api/discovery/resources/${provider.id}`);
                         if (!response.ok) {
@@ -2843,6 +2858,20 @@
                         if (data && data.resources) {
                             // Add provider name to each resource
                             data.resources.forEach(resource => {
+                                // Filter out mock resources if setting is enabled
+                                const isMockResource = 
+                                    resource.providerId?.toLowerCase().includes('mock') || 
+                                    resource.providerName?.toLowerCase().includes('mock') ||
+                                    provider.name.toLowerCase().includes('mock') ||
+                                    resource.providerId === 'aws-mock' ||
+                                    provider.id === 'aws-mock' ||
+                                    (resource.metadata && resource.metadata.isMock === true);
+                                    
+                                if (openNMSIntegrationConfig.hideMockProviders && isMockResource) {
+                                    console.log(`Skipping mock resource: ${resource.resourceId} from ${provider.id}`);
+                                    return; // Skip this resource
+                                }
+                                
                                 resource.providerName = provider.name;
                                 resourcesForTransfer.push(resource);
                             });
@@ -2878,16 +2907,71 @@
                 return;
             }
             
-            // Show only the first 5 resources to keep the UI clean
-            const displayResources = resourcesForTransfer.slice(0, 5);
+            // Show filter status if mock providers are hidden
+            if (openNMSIntegrationConfig.hideMockProviders) {
+                const noticeRow = document.createElement('tr');
+                noticeRow.innerHTML = `<td colspan="6" style="text-align: center; font-style: italic; background-color: #f8f9fa; padding: 8px;">
+                    Note: Mock providers are currently hidden. Use Settings to show them.
+                </td>`;
+                tableBody.appendChild(noticeRow);
+            }
+            
+            // Show up to 20 resources
+            const displayResources = resourcesForTransfer.slice(0, 20);
             
             displayResources.forEach(resource => {
                 const row = document.createElement('tr');
+                
+                // Get IP address from metadata if available
+                let ipAddress = '-';
+                
+                // Try all possible places where IP might be stored
+                if (resource.metadata && resource.metadata.ipAddress) {
+                    ipAddress = resource.metadata.ipAddress;
+                } else if (resource.metadata && resource.metadata.privateIpAddress) {
+                    ipAddress = resource.metadata.privateIpAddress;
+                } else if (resource.metadata && resource.metadata.publicIpAddress) {
+                    ipAddress = resource.metadata.publicIpAddress;
+                } else if (resource.properties && resource.properties.ipAddress) {
+                    ipAddress = resource.properties.ipAddress;
+                } else if (resource.properties && resource.properties.privateIpAddress) {
+                    ipAddress = resource.properties.privateIpAddress;
+                } else if (resource.properties && resource.properties.publicIpAddress) {
+                    ipAddress = resource.properties.publicIpAddress;
+                } else if (resource.ipAddress) {
+                    ipAddress = resource.ipAddress;
+                }
+                
+                // Debug log if IP address is missing
+                if (ipAddress === '-') {
+                    console.log('Resource missing IP address:', resource);
+                    
+                    // If this is an EC2 instance, inspect metadata
+                    if (resource.resourceType === 'EC2') {
+                        console.log('Resource properties:', resource.properties);
+                        console.log('Resource metadata:', resource.metadata);
+                    }
+                }
+                
+                // Get status with proper formatting
+                let statusDisplay = resource.status || '-';
+                let statusClass = '';
+                if (statusDisplay === 'running') {
+                    statusClass = 'status-ok';
+                } else if (statusDisplay === 'stopped') {
+                    statusClass = 'status-warning';
+                } else if (statusDisplay === 'pending') {
+                    statusClass = 'status-pending';
+                } else if (statusDisplay.includes('error') || statusDisplay.includes('terminated')) {
+                    statusClass = 'status-error';
+                }
+                
                 row.innerHTML = `
                     <td>${resource.providerName || resource.providerId}</td>
-                    <td>${resource.resourceId}</td>
-                    <td>${resource.name || '-'}</td>
+                    <td title="${resource.resourceId}">${resource.name || resource.resourceId || '-'}</td>
                     <td>${resource.resourceType || '-'}</td>
+                    <td>${ipAddress}</td>
+                    <td><span class="${statusClass}">${statusDisplay}</span></td>
                     <td>
                         <button class="button create-node-btn" 
                                 data-provider-id="${resource.providerId}" 
@@ -2905,9 +2989,14 @@
             });
             
             // Add a "More..." row if there are more resources
-            if (resourcesForTransfer.length > 5) {
-                // No need to show link to transfers page since we're integrating everything
-                tableBody.appendChild(document.createElement('tr'));
+            if (resourcesForTransfer.length > 20) {
+                const moreRow = document.createElement('tr');
+                moreRow.innerHTML = `
+                    <td colspan="6" class="text-center">
+                        Showing 20 of ${resourcesForTransfer.length} resources
+                    </td>
+                `;
+                tableBody.appendChild(moreRow);
             }
             
             // Add event listeners for buttons
@@ -3020,7 +3109,8 @@
             nodeSyncFrequency: 30, // minutes
             metricsSendFrequency: 10, // minutes
             enableAutoNodeSync: false,
-            enableAutoMetricsSend: false
+            enableAutoMetricsSend: false,
+            disableMockProviders: false  // Use real provider only when enabled
         };
         
         // Function to load integration configuration from server
@@ -3038,6 +3128,39 @@
         }
         
         // Function to open the comprehensive configuration panel
+        // Function to check active providers status
+        async function checkActiveProviders() {
+            try {
+                const response = await fetch('/bridge/api/cloud-providers/active');
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                
+                const result = await response.json();
+                console.log('Active providers:', result);
+                
+                // Update the UI with active providers
+                const providersCount = result.count || 0;
+                const useMockProviders = result.useMockProviders;
+                
+                // You can update UI elements here to reflect the current state
+                // For example, update a status indicator or refresh the dashboard
+                refreshDashboard();
+                
+                // Show a toast notification about the provider status
+                if (useMockProviders) {
+                    showToast(`Using ${providersCount} mock providers for discovery and collection.`);
+                } else {
+                    showToast(`Using ${providersCount} real providers for discovery and collection.`);
+                }
+                
+                return result;
+            } catch (error) {
+                console.error('Error checking active providers:', error);
+                showToast('Failed to check active providers', 'error');
+            }
+        }
+        
         function openComprehensiveConfigModal() {
             // Load latest config first
             loadIntegrationConfig().then(() => {
@@ -3048,6 +3171,7 @@
                 document.getElementById('metrics-send-frequency').value = openNMSIntegrationConfig.metricsSendFrequency;
                 document.getElementById('enable-auto-node-sync').checked = openNMSIntegrationConfig.enableAutoNodeSync;
                 document.getElementById('enable-auto-metrics-send').checked = openNMSIntegrationConfig.enableAutoMetricsSend;
+                document.getElementById('disable-mock-providers').checked = openNMSIntegrationConfig.disableMockProviders === true;
                 
                 // Show the modal
                 document.getElementById('opennms-comprehensive-config-modal').style.display = 'block';
@@ -3064,6 +3188,7 @@
                 const metricsSendFrequency = parseInt(document.getElementById('metrics-send-frequency').value);
                 const enableAutoNodeSync = document.getElementById('enable-auto-node-sync').checked;
                 const enableAutoMetricsSend = document.getElementById('enable-auto-metrics-send').checked;
+                const disableMockProviders = document.getElementById('disable-mock-providers').checked;
                 
                 // Validate values
                 if (isNaN(discoveryFrequency) || discoveryFrequency < 1) {
@@ -3086,7 +3211,8 @@
                     nodeSyncFrequency,
                     metricsSendFrequency,
                     enableAutoNodeSync,
-                    enableAutoMetricsSend
+                    enableAutoMetricsSend,
+                    disableMockProviders
                 };
                 
                 // Send to server
@@ -3104,17 +3230,36 @@
                 
                 const result = await response.json();
                 
+                // If disableMockProviders was changed, check the active providers
+                if (result.mockProviderStatus) {
+                    console.log('Mock provider status updated to:', result.mockProviderStatus);
+                    await checkActiveProviders();
+                }
+                
                 // Hide modal
                 document.getElementById('opennms-comprehensive-config-modal').style.display = 'none';
                 
-                // Show success message
-                alert('OpenNMS integration configuration saved successfully');
+                // Show toast notification
+                showToast('Integration configuration saved successfully.');
                 
-                // Refresh OpenNMS connection info
+                // Show success message
+                showToast('OpenNMS integration configuration saved successfully', 'success');
+                
+                // Refresh OpenNMS connection info and resources with new settings
                 loadOpenNMSConnection();
                 
+                // Refresh the resources display with new settings
+                document.getElementById('opennms-resources-table').style.display = 'none';
+                document.getElementById('opennms-resources-loading').style.display = 'block';
+                document.getElementById('opennms-resources-loading').textContent = 'Applying settings and refreshing resources...';
+                
+                // Small delay to ensure UI updates
+                setTimeout(() => {
+                    fetchResourcesForTransfer();
+                }, 500);
+                
             } catch (error) {
-                alert('Error saving configuration: ' + error.message);
+                showToast('Error saving configuration: ' + error.message, 'error');
             }
         }
         
@@ -3179,10 +3324,56 @@
                     <small>Automatically send collected metrics to OpenNMS</small>
                 </div>
                 
+                <hr style="margin: 20px 0; border-top: 1px solid #ddd;">
+                
+                <h3 style="margin-top: 0;">Display Settings</h3>
+                
+                <div class="form-group">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="disable-mock-providers">
+                        <span class="checkmark"></span>
+                        Disable Mock Providers (Use Real AWS Provider Only)
+                    </label>
+                    <small>When checked, disables the mock AWS provider and uses only the real AWS provider for discovery and collection. This will restart the provider services.</small>
+                </div>
+                
                 <div class="form-actions">
                     <button class="button" onclick="saveComprehensiveConfig()">Save Configuration</button>
                     <button class="button secondary" onclick="cancelComprehensiveConfig()">Cancel</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- OpenNMS Resources Section -->
+    <div class="container">
+        <div class="card">
+            <h2>Cloud Resources for OpenNMS Transfer</h2>
+            <p>These virtual machines and resources can be manually transferred to OpenNMS for monitoring. Click "Send Node" to create a node in OpenNMS or "Send Metrics" to transfer metric data.</p>
+            
+            <div class="card-actions">
+                <button id="refresh-opennms-resources" class="button">Refresh Resources</button>
+                <button onclick="openComprehensiveConfigModal()" class="button" style="margin-left: 10px;">Settings</button>
+            </div>
+            
+            <div id="opennms-resources-loading" class="loading">Loading resources...</div>
+            
+            <div class="table-container">
+                <table id="opennms-resources-table" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>IP Address</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Resources will be populated here -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>

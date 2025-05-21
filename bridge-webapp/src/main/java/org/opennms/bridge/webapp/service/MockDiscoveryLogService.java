@@ -84,11 +84,14 @@ public class MockDiscoveryLogService implements DiscoveryLogService {
         
         for (CloudResource resource : resources) {
             Map<String, Object> data = new HashMap<>();
-            data.put("id", resource.getResourceId());
+            data.put("resourceId", resource.getResourceId());  // Changed "id" to "resourceId"
             data.put("name", resource.getDisplayName());
-            data.put("type", resource.getResourceType());
+            data.put("resourceType", resource.getResourceType());  // Changed "type" to "resourceType"
             data.put("status", resource.getStatus());
             data.put("region", resource.getRegion());
+            
+            // Add providerId (critical for transfer functionality)
+            data.put("providerId", providerId);
             
             // Add metadata
             Map<String, Object> metadata = new HashMap<>();
@@ -185,9 +188,9 @@ public class MockDiscoveryLogService implements DiscoveryLogService {
         for (int i = 0; i < 5; i++) {
             String instanceId = "i-" + (1234567890 + i) + "abcdef" + i;
             CloudResource resource = new CloudResource();
-            resource.setId(instanceId);
-            resource.setName("EC2 Instance " + (i + 1));
-            resource.setType("EC2");
+            resource.setId(instanceId);  // This is also the resourceId
+            resource.setName("EC2 Instance " + (i + 1));  // This is also the displayName
+            resource.setType("EC2");  // This is also the resourceType
             resource.setRegion("us-east-1");
             
             // Set different statuses
@@ -198,6 +201,15 @@ public class MockDiscoveryLogService implements DiscoveryLogService {
             } else {
                 resource.setStatus("pending");
             }
+            
+            // Add IP addresses
+            String ipAddress = "10.0." + i + "." + (100 + i);
+            String privateIpAddress = "172.16." + i + "." + (100 + i);
+            resource.addProperty("ipAddress", ipAddress);
+            resource.addProperty("privateIpAddress", privateIpAddress);
+            
+            // Add providerId property
+            resource.addProperty("providerId", providerId);
             
             // Add some properties
             Map<String, Object> properties = new HashMap<>();

@@ -8,6 +8,7 @@ import java.util.Date;
 
 import org.opennms.bridge.api.CloudProvider;
 import org.opennms.bridge.api.CloudResource;
+import org.opennms.bridge.api.CollectionService;
 import org.opennms.bridge.api.ValidationResult;
 import org.opennms.bridge.aws.AwsCloudProvider;
 import org.opennms.bridge.aws.AwsConfigurationProperties;
@@ -21,6 +22,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.opennms.bridge.webapp.service.ProviderFilterService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +39,7 @@ import java.util.stream.Collectors;
  * REST controller for managing cloud providers.
  */
 @RestController
-@RequestMapping("/api/cloud-providers")
+@RequestMapping("/cloud-providers")
 public class CloudProviderController {
     private static final Logger LOG = LoggerFactory.getLogger(CloudProviderController.class);
 
@@ -59,12 +61,30 @@ public class CloudProviderController {
     @Autowired
     private CredentialService credentialService;
     
+    @Autowired
+    private CollectionService collectionService;
+    
+    @Autowired
+    private ProviderFilterService providerFilterService;
+    
     @Value("${bridge.debug.aws.log_directory:logs/aws}")
     private String debugLogDirectory;
     
+    /**
+     * Get all registered cloud providers.
+     * This returns all providers registered in the system, regardless of whether they're mock or real.
+     * To get only the active providers used for discovery and collection, use /active endpoint.
+     * 
+     * @return List of all providers with their configuration
+     */
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> getAllCloudProviders() {
-        List<Map<String, Object>> providerData = cloudProviders.stream()
+        // Filter providers based on mock provider setting
+        List<CloudProvider> filteredProviders = cloudProviders.stream()
+                .filter(provider -> providerFilterService.shouldIncludeProvider(provider))
+                .collect(Collectors.toList());
+        
+        List<Map<String, Object>> providerData = filteredProviders.stream()
                 .map(provider -> {
                     try {
                         // Convert provider to a map of properties for the API
@@ -89,6 +109,14 @@ public class CloudProviderController {
                         data.put("supportedMetrics", provider.getSupportedMetrics());
                         data.put("availableRegions", provider.getAvailableRegions());
                         
+                        // Add next collection time
+                        try {
+                            data.put("nextCollectionTime", collectionService.getNextCollectionTime(provider.getProviderId()));
+                        } catch (Exception e) {
+                            LOG.warn("Error getting next collection time for provider {}: {}", 
+                                   provider.getProviderId(), e.getMessage());
+                        }
+                        
                         return data;
                     } catch (Exception e) {
                         // Log error and return basic information
@@ -111,6 +139,7 @@ public class CloudProviderController {
     public ResponseEntity<Map<String, Object>> getCloudProvider(@PathVariable String id) {
         return cloudProviders.stream()
                 .filter(provider -> provider.getProviderId().equals(id))
+                .filter(provider -> providerFilterService.shouldIncludeProvider(provider))
                 .findFirst()
                 .map(provider -> {
                     try {
@@ -136,6 +165,14 @@ public class CloudProviderController {
                         data.put("supportedMetrics", provider.getSupportedMetrics());
                         data.put("availableRegions", provider.getAvailableRegions());
                         
+                        // Add next collection time
+                        try {
+                            data.put("nextCollectionTime", collectionService.getNextCollectionTime(provider.getProviderId()));
+                        } catch (Exception e) {
+                            LOG.warn("Error getting next collection time for provider {}: {}", 
+                                   provider.getProviderId(), e.getMessage());
+                        }
+                        
                         return ResponseEntity.ok(data);
                     } catch (Exception e) {
                         // Log error and return basic information
@@ -156,6 +193,7 @@ public class CloudProviderController {
     public ResponseEntity<Map<String, Object>> validateCloudProvider(@PathVariable String id) {
         return cloudProviders.stream()
                 .filter(provider -> provider.getProviderId().equals(id))
+                .filter(provider -> providerFilterService.shouldIncludeProvider(provider))
                 .findFirst()
                 .map(provider -> {
                     try {
@@ -795,13 +833,18 @@ public class CloudProviderController {
     public ResponseEntity<List<Map<String, Object>>> getProviderResources(@PathVariable String id) {
         LOG.info("Getting resources for provider: {}", id);
         
-        // Find the provider
-        CloudProvider provider = null;
-        for (CloudProvider p : cloudProviders) {
-            if (p.getProviderId().equals(id)) {
-                provider = p;
-                break;
-            }
+        // Find the provider and filter based on mock provider setting
+        CloudProvider provider = cloudProviders.stream()
+                .filter(p -> p.getProviderId().equals(id))
+                .filter(p -> providerFilterService.shouldIncludeProvider(p))
+                .findFirst()
+                .orElse(null);
+                
+        // If provider wasn't found but should have been included based on ID, log details
+        if (provider == null && providerFilterService.shouldIncludeProvider(id)) {
+            LOG.warn("Provider with ID '{}' should be included but wasn't found", id);
+        } else if (provider == null && !providerFilterService.shouldIncludeProvider(id)) {
+            LOG.info("Provider with ID '{}' was not included because mock providers are disabled", id);
         }
         
         if (provider == null) {
@@ -834,6 +877,58 @@ public class CloudProviderController {
         } catch (Exception e) {
             LOG.error("Error discovering resources for provider {}: {}", id, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+    
+    /**
+     * Get only the active cloud providers that are currently being used for discovery and collection.
+     * This differs from the main GET endpoint which returns all registered providers.
+     * The active providers list is what's actually used for discovery and collection operations,
+     * and is affected by the "Disable Mock Providers" setting.
+     * 
+     * @return List of active providers
+     */
+    @GetMapping("/active")
+    public ResponseEntity<Map<String, Object>> getActiveCloudProviders() {
+        LOG.info("Getting active cloud providers");
+        
+        Map<String, Object> response = new HashMap<>();
+        List<Map<String, Object>> providerData = new ArrayList<>();
+        
+        try {
+            // Get the active providers list from BeanConfig
+            List<CloudProvider> activeProviders = beanConfig.getActiveProviders();
+            
+            // Convert providers to response format
+            for (CloudProvider provider : activeProviders) {
+                Map<String, Object> data = new HashMap<>();
+                data.put("id", provider.getProviderId());
+                data.put("type", provider.getProviderType());
+                data.put("name", provider.getDisplayName());
+                data.put("isMock", provider.getClass().getSimpleName().contains("Mock"));
+                
+                // Add validation status
+                try {
+                    ValidationResult validationResult = provider.validate();
+                    data.put("valid", validationResult.isValid());
+                    data.put("validationMessage", validationResult.getMessage());
+                } catch (Exception e) {
+                    data.put("valid", false);
+                    data.put("validationMessage", "Validation error: " + e.getMessage());
+                }
+                
+                providerData.add(data);
+            }
+            
+            response.put("providers", providerData);
+            response.put("count", providerData.size());
+            response.put("useMockProviders", beanConfig.getUseMockProviders());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            LOG.error("Error getting active cloud providers: {}", e.getMessage(), e);
+            response.put("error", "Failed to get active providers: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
     }
 }

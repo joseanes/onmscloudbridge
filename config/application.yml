@@ -32,7 +32,7 @@ scheduler:
 
 # Application
 server:
-  port: 8082  # Changed from 8081 to avoid port conflicts
+  port: 8081  # Use standard port
   servlet:
     context-path: /bridge
 
@@ -61,3 +61,31 @@ spring:
   #   user:
   #     name: admin
   #     password: admin
+cloud:
+  providers:
+    useMock: false
+
+# Bridge debug settings
+bridge:
+  debug:
+    # Enable debug mode globally
+    enabled: true
+    # Default debug flags for AWS providers
+    aws:
+      # Enable extreme debug mode for AWS provider
+      extreme_debug: true
+      # Emergency bypass mode for AWS provider - when false, real AWS resources are used
+      emergency_bypass: false
+      # Debug log directory - if specified, writes will go here instead of /tmp
+      log_directory: logs
+
+# Integration configuration
+integration:
+  # Default settings for OpenNMS integration
+  discoveryFrequency: 15  # minutes
+  collectionFrequency: 5   # minutes
+  nodeSyncFrequency: 30    # minutes
+  metricsSendFrequency: 10 # minutes
+  enableAutoNodeSync: false
+  enableAutoMetricsSend: false
+  disableMockProviders: true
