@@ -35,7 +35,7 @@
         <!-- Utility libraries -->
         <jackson.version>2.15.2</jackson.version>
         <slf4j.version>2.0.9</slf4j.version>
-        <logback.version>1.4.11</logback.version>
+        <logback.version>1.4.12</logback.version>
         <junit.version>5.10.0</junit.version>
         <mockito.version>5.5.0</mockito.version>
         <wiremock.version>3.0.1</wiremock.version>
@@ -51,7 +51,6 @@
         <module>bridge-core</module>
         <module>bridge-providers</module>
         <module>bridge-webapp</module>
-        <module>bridge-integration</module>
     </modules>
 
     <dependencyManagement>
@@ -111,6 +110,11 @@
             <dependency>
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
+                <version>${logback.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-core</artifactId>
                 <version>${logback.version}</version>
             </dependency>
 
