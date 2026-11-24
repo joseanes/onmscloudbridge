@@ -183,3 +183,5 @@ Based on my analysis of the frontend code and backend controllers, here's what I
 2. When updating collection intervals, all three need to be updated.
 
 3. Provider ID normalization is essential for consistent operation and preventing duplicate UI entries.
+
+4. **Dependency security pins**: `requirements.txt` is the Python manifest Dependabot scans. `python-jose` through 3.5.0 is still vulnerable to GHSA-3qf3-8w2g-rqmx and is not imported anywhere, so JWT support is PyJWT. `mkdocs-material` 9.7.x needs `mkdocs>=1.6`. `databases` 0.8 cannot be installed next to SQLAlchemy 2; 0.9 can. Logback is split: modules under the root POM use 1.4.12 (with `logback-core` managed to the same version), and `bridge-webapp` uses Spring Boot's 1.2 line, so set `logback.version` to 1.2.13 there. The root POM listed a `bridge-integration` module that is not in the tree; Maven cannot build the reactor until that entry is gone.
